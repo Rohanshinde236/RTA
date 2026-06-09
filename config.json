@@ -1,0 +1,227 @@
+{
+  "regions": [
+    {
+      "active": false,
+      "dashboard": "ui/RTA.html",
+      "display": "Client ProSupport IND",
+      "name": "RTA",
+      "webhook": "https://default3dcd35b5f9c548ca8653821568ad33.97.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/381057deea5248d2bcf9005a18aa5dbb/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=9nLmlbFsV41VRFtP6hfTmTS4V4t_xI26Ukmn_jlTCVo"
+    },
+    {
+      "active": true,
+      "dashboard": "ui/RTA_CN.html",
+      "display": "Client ProSupport CHN",
+      "name": "CN",
+      "webhook": "https://default3dcd35b5f9c548ca8653821568ad33.97.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/3379f591ca84453b89a0a03d53aec519/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=EvXfl7RGDaI-Tu4W3htPbiT_iXxAql_8FM222xQ4xZw"
+    },
+    {
+      "active": true,
+      "dashboard": "ui/RTA_AU.html",
+      "display": "Client ProSupport AUS",
+      "name": "AU",
+      "webhook": "https://default3dcd35b5f9c548ca8653821568ad33.97.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/71f0c3b2a70647c28ef6209ba90a2746/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=oc6jdaERau2JKscW6fWYwl8BncKril_X0GAlmQGAuF8"
+    },
+    {
+      "active": true,
+      "dashboard": "ui/RTA_EMEA.html",
+      "display": "Client ProSupport EMEA",
+      "name": "EMEA",
+      "webhook": "https://default3dcd35b5f9c548ca8653821568ad33.97.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/2f5261c89a5c430aabfac3a103b08d25/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=9f9ij5Tkw1TWnydH7DXo0aupgt3-BErxot0qIn2kMoU"
+    }
+  ],
+  "agent1": {
+    "scrape_interval_sec": 60,
+    "band_drop_email_enabled": false,
+    "band_drop_teams_enabled": false
+  },
+  "agent2": {
+    "ocw_threshold_sec": 60,
+    "queue_min": 1,
+    "cooldown_sec": 300,
+    "llm_enabled": true
+  },
+  "agent3": {
+    "amber_threshold": 90.0,
+    "red_threshold": 80.0,
+    "black_threshold": 70.0,
+    "excel_path": "D:\\OneDrive - Aligned Automation Services Private Limited\\Desktop\\RTA_V3\\Voice_Queue_Intraday.xlsx",
+    "email_recipients": [
+      "shivam.saraf@alignedautomation.com",
+      "rohan.shinde@alignedautomation.com"
+    ]
+  },
+  "agent4": {
+    "scrape_interval_sec": 60,
+    "aht_target_min": 1,
+    "acw_target_min": 1,
+    "aux_thresholds": {
+      "AUX1": {
+        "name": "IT Issue",
+        "max_time_min": 0,
+        "enabled": false
+      },
+      "AUX2": {
+        "name": "Break",
+        "max_time_min": 15,
+        "enabled": true
+      },
+      "AUX3": {
+        "name": "Lunch",
+        "max_time_min": 30,
+        "enabled": true
+      },
+      "AUX4": {
+        "name": "Meeting",
+        "max_time_min": 0,
+        "enabled": false
+      },
+      "AUX5": {
+        "name": "Training",
+        "max_time_min": 0,
+        "enabled": false
+      },
+      "AUX6": {
+        "name": "Case Mgmt",
+        "max_time_min": 45,
+        "enabled": true
+      },
+      "AUX7": {
+        "name": "Project",
+        "max_time_min": 0,
+        "enabled": false
+      },
+      "AUX8": {
+        "name": "Alt Channel",
+        "max_time_min": 0,
+        "enabled": false
+      },
+      "AUX9": {
+        "name": "Outbound",
+        "max_time_min": 12,
+        "enabled": true
+      }
+    }
+  },
+  "skill_thresholds": {
+    "TS_CSTCE": {
+      "aht_target_min": 24,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_CSTElite": {
+      "aht_target_min": 22,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_LicKeys": {
+      "aht_target_min": 26,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_VICHW": {
+      "aht_target_min": 20,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_CSTVCE": {
+      "aht_target_min": 24,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_CSTCritAcct": {
+      "aht_target_min": 28,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_CN_ProDB": {
+      "aht_target_min": 24,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_CN_ProCNX": {
+      "aht_target_min": 24,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_CN_Elite": {
+      "aht_target_min": 22,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_CN_LicKeys": {
+      "aht_target_min": 26,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_CN_VICHW": {
+      "aht_target_min": 20,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_CN_CritAcct": {
+      "aht_target_min": 28,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_AU_ProDB": {
+      "aht_target_min": 24,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_AU_ProCNX": {
+      "aht_target_min": 24,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_AU_Elite": {
+      "aht_target_min": 22,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_AU_LicKeys": {
+      "aht_target_min": 26,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_AU_VICHW": {
+      "aht_target_min": 20,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_AU_CritAcct": {
+      "aht_target_min": 28,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_MLSCST_GER": {
+      "aht_target_min": 22,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_MLSCST_SPA": {
+      "aht_target_min": 22,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_MLSCST_FRA": {
+      "aht_target_min": 22,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_MLSCST_ITA": {
+      "aht_target_min": 22,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_MLSCST_NLD": {
+      "aht_target_min": 22,
+      "ocw_threshold_sec": 60,
+      "active": true
+    },
+    "TS_MLSCST_POL": {
+      "aht_target_min": 22,
+      "ocw_threshold_sec": 60,
+      "active": true
+    }
+  }
+}

@@ -1,0 +1,31 @@
+# RTA Agentic SLA Monitoring System - v3
+# Python 3.11
+# Install: pip install -r requirements.txt
+# Then:    playwright install chromium
+# Then:    cd frontend && npm install && npm run build
+
+# Orchestration
+langgraph>=0.2.0
+langchain-core>=0.2.0
+
+# Browser Automation
+playwright>=1.40.0
+
+# LLM Provider
+groq>=0.9.0
+
+# Web Framework
+flask>=3.0.0
+markupsafe>=2.1.0
+flask-socketio>=5.6.1          # Real-time WebSocket push to React frontend (5.6.1+ required for Flask 3.x)
+eventlet==0.36.1                # Async worker required by flask-socketio
+
+# Data Processing
+pandas>=2.1.0
+openpyxl>=3.1.0
+
+# HTTP / Alerting
+requests>=2.31.0
+
+# Config / Environment
+python-dotenv>=1.0.0

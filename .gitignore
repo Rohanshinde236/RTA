@@ -1,0 +1,79 @@
+# ── Python ────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.Python
+
+# ── Virtual environment ───────────────────────────────────────────
+venv/
+.venv/
+env/
+ENV/
+
+# ── Environment / secrets ─────────────────────────────────────────
+config.env
+*.env
+.env
+.env.*
+
+# ── Runtime / generated data ──────────────────────────────────────
+live_state.json
+history.db
+*.db
+*.sqlite
+*.sqlite3
+rta_v3.log
+rta_startup.log
+log/
+alerts/
+
+# ── Excel / Office files ──────────────────────────────────────────
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+
+# ── Scraped HTML dashboards (regenerated at runtime) ──────────────
+CMS.html
+RTA.html
+RTA_AU.html
+RTA_CN.html
+RTA_EMEA.html
+ui/RTA.html
+ui/RTA_AU.html
+ui/RTA_CN.html
+ui/RTA_EMEA.html
+ui/CMS.html
+
+# ── React / Node ──────────────────────────────────────────────────
+frontend/node_modules/
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+frontend/dist/
+
+# ── React build output (served by Flask) ─────────────────────────
+ui/dist/
+
+# ── OS files ──────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE / Editor ──────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Playwright / test artefacts ───────────────────────────────────
+playwright-report/
+test-results/
