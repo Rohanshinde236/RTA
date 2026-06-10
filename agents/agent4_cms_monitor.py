@@ -429,14 +429,20 @@ def agent4_monitor(webhook: str, region_name: str, cms_collector, skills: list) 
 
 # ── Background loop ───────────────────────────────────────────────────────────
 
-def agent4_monitor_loop(webhook: str, region_name: str, dashboard_path: str, tag: str = None):
+def agent4_monitor_loop(webhook: str, region_name: str, dashboard_path: str,
+                        tag: str = None, initial_delay_sec: int = 0):
     """
     Permanent background thread for Agent 4.
     Runs every POLL_INTERVAL_SEC seconds.
     Creates its own CMS browser — does NOT share A2's browser.
+    initial_delay_sec: stagger offset so all 10 regions don't fire simultaneously.
     """
     if tag is None:
         tag = region_name.lower()
+
+    if initial_delay_sec > 0:
+        logger.info(f"A4 [{region_name}]: staggered start — waiting {initial_delay_sec}s")
+        time.sleep(initial_delay_sec)
 
     logger.info(f"A4 [{region_name}]: Starting CMS monitor thread (every {POLL_INTERVAL_SEC}s)...")
 

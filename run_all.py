@@ -192,7 +192,7 @@ def _load(name, rel):
     return mod
 
 
-def region_loop(region: dict):
+def region_loop(region: dict, region_index: int = 0):
     """Permanent thread for one region."""
     name      = region["name"]
     display   = region["display"]
@@ -221,14 +221,17 @@ def region_loop(region: dict):
     # Agent 4 (CMS monitor) — only in full mode
     if not scrape_only:
         agent4 = _load(f"rta_agent4_{tag}", "agents/agent4_cms_monitor.py")
+        # Stagger A4 start so all 10 regions don't send Teams alerts simultaneously.
+        # Each region gets a 6s offset → spread evenly across the 60s poll cycle.
+        a4_stagger = region_index * 6
         a4_thread = threading.Thread(
             target=agent4.agent4_monitor_loop,
-            args=(webhook, name, dashboard, tag),
+            args=(webhook, name, dashboard, tag, a4_stagger),
             name=f"A4-{name}",
             daemon=True
         )
         a4_thread.start()
-        logger.info(f"[{name}] Agent 4 CMS monitor thread started.")
+        logger.info(f"[{name}] Agent 4 CMS monitor thread started (stagger={a4_stagger}s).")
     else:
         logger.info(f"[{name}] Scrape-only mode — Agent 4 (CMS monitor) skipped.")
 
@@ -308,7 +311,7 @@ def main():
     for i, region in enumerate(REGIONS):
         t = threading.Thread(
             target=region_loop,
-            args=(region,),
+            args=(region, i),
             name=f"RTA-{region['name']}",
             daemon=True
         )
