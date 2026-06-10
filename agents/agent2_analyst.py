@@ -560,7 +560,7 @@ def _fallback(skill_name, metric, agents, breach_reasons):
                 "aux_code":    matched_code,
                 "aux_reason":  aux_name,
                 "time_on_aux": time_str,
-                "note":        f"Exceeded {max_min} min {aux_name} limit — move first",
+                "note":        f"Exceeded {max_min} min {aux_name} limit — move to calls",
             })
             priority += 1
 
@@ -597,6 +597,92 @@ def _fallback(skill_name, metric, agents, breach_reasons):
             f"{metric.agents_on_aux if metric else 0} on AUX."
         ),
     }
+
+
+# ── Result sanitiser — runs after BOTH LLM and fallback ──────────────────────
+
+def _sanitise_result(result: dict, agents: list) -> dict:
+    """
+    Post-process analyst result to fix common LLM hallucinations:
+    1. Deduplicate: same agent cannot appear in more than one list.
+       Priority order: move > ask > hold.
+    2. Validate move_list: remove agents whose actual AUX time is below
+       the configured threshold (LLM sometimes says "exceeded 15 min"
+       for someone on break for 4 seconds).
+    3. Strip trailing garbage chars (?  …) from text fields.
+    """
+    aux_cfg   = _get_aux_config()
+    agents_map = {a.get('name', ''): a for a in (agents or [])}
+
+    move_list = list(result.get('move_list', []) or [])
+    ask_list  = list(result.get('ask_list',  []) or [])
+    hold_list = list(result.get('hold_list', []) or [])
+
+    # ── Step 1: validate move_list entries against real time data ─────────────
+    valid_move   = []
+    demoted_move = []   # names that failed validation
+
+    for entry in move_list:
+        name   = entry.get('name', '')
+        actual = agents_map.get(name)
+
+        if not actual or actual.get('state') != 'AUX':
+            demoted_move.append(name)
+            continue
+
+        reason       = actual.get('aux_reason', '')
+        time_min_act = actual.get('time_minutes', 0)
+
+        # Find AUX code
+        matched = None
+        for i in range(1, 10):
+            if f'AUX {i}' in reason or f'Aux{i}' in reason or f'AUX{i}' in reason:
+                matched = f'AUX{i}'
+                break
+
+        # AUX6 (Case Mgmt) should never be in move_list
+        if matched == 'AUX6':
+            demoted_move.append(name)
+            if not any(a.get('name') == name for a in ask_list):
+                ask_list.append({
+                    "name":    name,
+                    "message": f"{name} is on Case Mgmt, can you please jump to calls?",
+                })
+            continue
+
+        cfg     = aux_cfg.get(matched, {}) if matched else {}
+        max_min = cfg.get('max_time_min', 0)
+        # Reject if agent is under the threshold
+        if max_min > 0 and time_min_act <= max_min:
+            demoted_move.append(name)
+            continue
+
+        valid_move.append(entry)
+
+    demoted_set = set(demoted_move)
+
+    # ── Step 2: deduplicate ask/hold vs move ──────────────────────────────────
+    move_names = {e.get('name', '') for e in valid_move}
+    ask_list   = [a for a in ask_list  if a.get('name', '') not in move_names]
+
+    ask_names  = {a.get('name', '') for a in ask_list}
+    hold_list  = [
+        h for h in hold_list
+        if h.get('name', '') not in move_names
+        and h.get('name', '') not in ask_names
+    ]
+
+    # ── Step 3: strip trailing junk from text fields ──────────────────────────
+    _junk = '? \t'
+    for key in ('analyst_note', 'sla_recovery_estimate', 'root_cause'):
+        val = result.get(key, '')
+        if val:
+            result[key] = val.strip().rstrip(_junk).strip()
+
+    result['move_list'] = valid_move
+    result['ask_list']  = ask_list
+    result['hold_list'] = hold_list
+    return result
 
 
 # ── LLM call + JSON parse ─────────────────────────────────────────────────────
@@ -723,6 +809,9 @@ def agent2_analyst(state: dict) -> dict:
                 f"[{region_name}] Using fallback for {skill_name}"
             )
             result = _fallback(skill_name, metric, agents, breach_reasons)
+
+        # 4b. Sanitise — deduplicate agents, validate move times, strip junk
+        result = _sanitise_result(result, agents)
 
         # ensure skill key is correct
         result['skill'] = skill_name
