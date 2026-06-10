@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>CMS — Agent Detail</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#1a1a2e;color:#e0e0e0;font-family:'Segoe UI',Arial,sans-serif;font-size:13px}
+.topbar{background:#0d1b2a;padding:8px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #1e4d8c}
+.topbar .logo{font-size:15px;font-weight:700;color:#4fc3f7}
+.topbar select{background:#0d2137;color:#e0e0e0;border:1px solid #1e4d8c;padding:4px 8px;border-radius:4px;font-size:12px;margin-left:8px}
+.topbar label{font-size:12px;color:#90caf9}
+.topbar .clock{font-size:12px;color:#90caf9}
+.summary-bar{background:#0d2137;border-bottom:1px solid #1e4d8c;padding:10px 16px}
+.skill-title{font-size:14px;font-weight:700;color:#4fc3f7;margin-bottom:8px}
+.summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.summary-section{background:#0a1628;border-radius:6px;padding:8px 12px}
+.summary-section h4{font-size:10px;font-weight:600;color:#64b5f6;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px;border-bottom:1px solid #1e4d8c;padding-bottom:4px}
+.stat-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
+.stat-label{font-size:11px;color:#90caf9}
+.stat-val{font-size:12px;font-weight:600;color:#e0e0e0}
+.stat-val.red{color:#ef5350}.stat-val.amber{color:#ffa726}.stat-val.green{color:#66bb6a}.stat-val.blue{color:#42a5f5}
+.sl-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:13px;font-weight:700}
+.sl-good{background:#2e7d32;color:#fff}.sl-amber{background:#e65100;color:#fff}.sl-red{background:#c62828;color:#fff}.sl-black{background:#111;color:#fff;border:1px solid #444}.sl-high{background:#1565c0;color:#fff}
+.table-wrap{padding:12px 16px}
+.table-title{font-size:12px;font-weight:600;color:#64b5f6;margin-bottom:8px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead tr{background:#0d2137}
+th{padding:7px 10px;text-align:left;font-size:10px;font-weight:600;color:#90caf9;letter-spacing:.06em;text-transform:uppercase;border-bottom:2px solid #1e4d8c;white-space:nowrap}
+tbody tr{border-bottom:1px solid #0d2137}
+tbody tr:hover{background:#0d2137}
+tbody tr:nth-child(even){background:rgba(13,27,42,.4)}
+td{padding:6px 10px;white-space:nowrap}
+.state{display:inline-block;padding:2px 7px;border-radius:3px;font-size:10px;font-weight:700}
+.state-aux{background:#e65100;color:#fff}.state-avail{background:#2e7d32;color:#fff}
+.state-acd{background:#1565c0;color:#fff}.state-acw{background:#6a1b9a;color:#fff}
+.time-warn{color:#ffa726;font-weight:700}.time-crit{color:#ef5350;font-weight:700}.time-norm{color:#e0e0e0}
+.footer{padding:6px 16px;font-size:10px;color:#546e7a;border-top:1px solid #1e4d8c;display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="logo">📋 CMS — Agent Detail View</div>
+  <div style="display:flex;align-items:center;gap:4px">
+    <label>Skill:</label>
+    <select id="skill-select" onchange="render()">
+      <optgroup label="APJ-IN"><option value="TS_CSTCE">TS_CSTCE</option><option value="TS_CSTElite">TS_CSTElite</option><option value="TS_LicKeys">TS_LicKeys</option><option value="TS_VICHW">TS_VICHW</option><option value="TS_CSTVCE">TS_CSTVCE</option><option value="TS_CSTCritAcct">TS_CSTCritAcct</option></optgroup>
+      <optgroup label="APJ-CN"><option value="TS_CN_ProDB">TS_CN_ProDB</option><option value="TS_CN_ProCNX">TS_CN_ProCNX</option><option value="TS_CN_Elite">TS_CN_Elite</option><option value="TS_CN_LicKeys">TS_CN_LicKeys</option><option value="TS_CN_VICHW">TS_CN_VICHW</option><option value="TS_CN_CritAcct">TS_CN_CritAcct</option></optgroup>
+      <optgroup label="APJ-AU"><option value="TS_AU_ProDB">TS_AU_ProDB</option><option value="TS_AU_ProCNX">TS_AU_ProCNX</option><option value="TS_AU_Elite">TS_AU_Elite</option><option value="TS_AU_LicKeys">TS_AU_LicKeys</option><option value="TS_AU_VICHW">TS_AU_VICHW</option><option value="TS_AU_CritAcct">TS_AU_CritAcct</option></optgroup>
+      <optgroup label="EMEA"><option value="TS_MLSCST_GER">TS_MLSCST_GER</option><option value="TS_MLSCST_SPA">TS_MLSCST_SPA</option><option value="TS_MLSCST_FRA">TS_MLSCST_FRA</option><option value="TS_MLSCST_ITA">TS_MLSCST_ITA</option><option value="TS_MLSCST_NLD">TS_MLSCST_NLD</option><option value="TS_MLSCST_POL">TS_MLSCST_POL</option></optgroup>
+      <optgroup label="APJ-HK"><option value="TS_HK_ProDB">TS_HK_ProDB</option><option value="TS_HK_ProCNX">TS_HK_ProCNX</option><option value="TS_HK_Elite">TS_HK_Elite</option><option value="TS_HK_LicKeys">TS_HK_LicKeys</option><option value="TS_HK_VICHW">TS_HK_VICHW</option><option value="TS_HK_CritAcct">TS_HK_CritAcct</option></optgroup>
+      <optgroup label="APJ-MY"><option value="TS_MY_ProDB">TS_MY_ProDB</option><option value="TS_MY_ProCNX">TS_MY_ProCNX</option><option value="TS_MY_Elite">TS_MY_Elite</option><option value="TS_MY_LicKeys">TS_MY_LicKeys</option><option value="TS_MY_VICHW">TS_MY_VICHW</option><option value="TS_MY_CritAcct">TS_MY_CritAcct</option></optgroup>
+      <optgroup label="APJ-KR"><option value="TS_KR_ProDB">TS_KR_ProDB</option><option value="TS_KR_ProCNX">TS_KR_ProCNX</option><option value="TS_KR_Elite">TS_KR_Elite</option><option value="TS_KR_LicKeys">TS_KR_LicKeys</option><option value="TS_KR_VICHW">TS_KR_VICHW</option><option value="TS_KR_CritAcct">TS_KR_CritAcct</option></optgroup>
+      <optgroup label="APJ-TH"><option value="TS_TH_ProDB">TS_TH_ProDB</option><option value="TS_TH_ProCNX">TS_TH_ProCNX</option><option value="TS_TH_Elite">TS_TH_Elite</option><option value="TS_TH_LicKeys">TS_TH_LicKeys</option><option value="TS_TH_VICHW">TS_TH_VICHW</option><option value="TS_TH_CritAcct">TS_TH_CritAcct</option></optgroup>
+      <optgroup label="LATAM-BR"><option value="TS_BR_ProDB">TS_BR_ProDB</option><option value="TS_BR_ProCNX">TS_BR_ProCNX</option><option value="TS_BR_Elite">TS_BR_Elite</option><option value="TS_BR_LicKeys">TS_BR_LicKeys</option><option value="TS_BR_VICHW">TS_BR_VICHW</option><option value="TS_BR_CritAcct">TS_BR_CritAcct</option></optgroup>
+      <optgroup label="APJ-TW"><option value="TS_TW_ProDB">TS_TW_ProDB</option><option value="TS_TW_ProCNX">TS_TW_ProCNX</option><option value="TS_TW_Elite">TS_TW_Elite</option><option value="TS_TW_LicKeys">TS_TW_LicKeys</option><option value="TS_TW_VICHW">TS_TW_VICHW</option><option value="TS_TW_CritAcct">TS_TW_CritAcct</option></optgroup>
+    </select>
+  </div>
+  <div class="clock" id="clock">--:--:--</div>
+</div>
+
+<div class="summary-bar">
+  <div class="skill-title" id="skill-title">--</div>
+  <div class="summary-grid">
+    <div class="summary-section">
+      <h4>Queue Status</h4>
+      <div class="stat-row"><span class="stat-label">Calls Waiting</span><span class="stat-val" id="s-ciq">--</span></div>
+      <div class="stat-row"><span class="stat-label">Oldest Call Waiting</span><span class="stat-val" id="s-ocw">--</span></div>
+      <div class="stat-row"><span class="stat-label">Offered</span><span class="stat-val" id="s-offered">--</span></div>
+      <div class="stat-row"><span class="stat-label">Acceptable</span><span class="stat-val" id="s-acceptable">--</span></div>
+    </div>
+    <div class="summary-section">
+      <h4>Service Level</h4>
+      <div class="stat-row"><span class="stat-label">% Within SL</span><span id="s-sl">--</span></div>
+      <div class="stat-row"><span class="stat-label">SL Threshold</span><span class="stat-val blue">120s</span></div>
+      <div class="stat-row"><span class="stat-label">Staffed</span><span class="stat-val" id="s-staffed">--</span></div>
+      <div class="stat-row"><span class="stat-label">Available</span><span class="stat-val green" id="s-avail">--</span></div>
+    </div>
+    <div class="summary-section">
+      <h4>On Calls / AUX</h4>
+      <div class="stat-row"><span class="stat-label">On ACD Calls</span><span class="stat-val blue" id="s-on-acd">--</span></div>
+      <div class="stat-row"><span class="stat-label">In AUX</span><span class="stat-val amber" id="s-on-aux">--</span></div>
+    </div>
+    <div class="summary-section">
+      <h4>Refresh</h4>
+      <div class="stat-row"><span class="stat-label">Cycle</span><span class="stat-val blue">4 min</span></div>
+      <div class="stat-row"><span class="stat-label">Update</span><span class="stat-val blue">5s</span></div>
+      <div class="stat-row"><span class="stat-label">Skills</span><span class="stat-val">60 total</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="table-wrap">
+  <div class="table-title">Agent Detail — <span id="agent-count">--</span> agents</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Agent Name</th><th>Login ID</th><th>Role</th>
+        <th>AUX Reason</th><th>State</th><th>Direction</th>
+        <th>Split/Skill</th><th>Level</th><th>Time</th><th>VDN</th>
+      </tr>
+    </thead>
+    <tbody id="agent-tbody"></tbody>
+  </table>
+</div>
+
+<div class="footer">
+  <span id="footer-skill">Skill: --</span>
+  <span>Auto-refresh: 5s</span>
+  <span id="footer-time">--</span>
+</div>
+
+<script>
+const CYCLE_SEC   = 240;
+const ALL_SKILLS  = [
+  {"name":"TS_CSTCE","region":"APJ-IN","sl_target":88,"hc":16,"phase_offset":0},
+  {"name":"TS_CSTElite","region":"APJ-IN","sl_target":92,"hc":15,"phase_offset":40},
+  {"name":"TS_LicKeys","region":"APJ-IN","sl_target":80,"hc":13,"phase_offset":80},
+  {"name":"TS_VICHW","region":"APJ-IN","sl_target":85,"hc":12,"phase_offset":120},
+  {"name":"TS_CSTVCE","region":"APJ-IN","sl_target":88,"hc":14,"phase_offset":160},
+  {"name":"TS_CSTCritAcct","region":"APJ-IN","sl_target":95,"hc":14,"phase_offset":200},
+  {"name":"TS_CN_ProDB","region":"APJ-CN","sl_target":88,"hc":12,"phase_offset":20},
+  {"name":"TS_CN_ProCNX","region":"APJ-CN","sl_target":88,"hc":11,"phase_offset":60},
+  {"name":"TS_CN_Elite","region":"APJ-CN","sl_target":92,"hc":10,"phase_offset":100},
+  {"name":"TS_CN_LicKeys","region":"APJ-CN","sl_target":80,"hc":9,"phase_offset":140},
+  {"name":"TS_CN_VICHW","region":"APJ-CN","sl_target":85,"hc":10,"phase_offset":180},
+  {"name":"TS_CN_CritAcct","region":"APJ-CN","sl_target":95,"hc":8,"phase_offset":220},
+  {"name":"TS_AU_ProDB","region":"APJ-AU","sl_target":88,"hc":10,"phase_offset":10},
+  {"name":"TS_AU_ProCNX","region":"APJ-AU","sl_target":88,"hc":9,"phase_offset":50},
+  {"name":"TS_AU_Elite","region":"APJ-AU","sl_target":92,"hc":8,"phase_offset":90},
+  {"name":"TS_AU_LicKeys","region":"APJ-AU","sl_target":80,"hc":8,"phase_offset":130},
+  {"name":"TS_AU_VICHW","region":"APJ-AU","sl_target":85,"hc":7,"phase_offset":170},
+  {"name":"TS_AU_CritAcct","region":"APJ-AU","sl_target":95,"hc":7,"phase_offset":210},
+  {"name":"TS_MLSCST_GER","region":"EMEA","sl_target":80,"hc":6,"phase_offset":30},
+  {"name":"TS_MLSCST_SPA","region":"EMEA","sl_target":80,"hc":6,"phase_offset":70},
+  {"name":"TS_MLSCST_FRA","region":"EMEA","sl_target":80,"hc":5,"phase_offset":110},
+  {"name":"TS_MLSCST_ITA","region":"EMEA","sl_target":80,"hc":5,"phase_offset":150},
+  {"name":"TS_MLSCST_NLD","region":"EMEA","sl_target":80,"hc":4,"phase_offset":190},
+  {"name":"TS_MLSCST_POL","region":"EMEA","sl_target":80,"hc":4,"phase_offset":230},
+  {"name":"TS_HK_ProDB","region":"APJ-HK","sl_target":92,"hc":13,"phase_offset":5},
+  {"name":"TS_HK_ProCNX","region":"APJ-HK","sl_target":90,"hc":12,"phase_offset":45},
+  {"name":"TS_HK_Elite","region":"APJ-HK","sl_target":88,"hc":11,"phase_offset":85},
+  {"name":"TS_HK_LicKeys","region":"APJ-HK","sl_target":87,"hc":10,"phase_offset":125},
+  {"name":"TS_HK_VICHW","region":"APJ-HK","sl_target":89,"hc":12,"phase_offset":165},
+  {"name":"TS_HK_CritAcct","region":"APJ-HK","sl_target":85,"hc":11,"phase_offset":205},
+  {"name":"TS_MY_ProDB","region":"APJ-MY","sl_target":89,"hc":12,"phase_offset":15},
+  {"name":"TS_MY_ProCNX","region":"APJ-MY","sl_target":88,"hc":11,"phase_offset":55},
+  {"name":"TS_MY_Elite","region":"APJ-MY","sl_target":87,"hc":10,"phase_offset":95},
+  {"name":"TS_MY_LicKeys","region":"APJ-MY","sl_target":86,"hc":10,"phase_offset":135},
+  {"name":"TS_MY_VICHW","region":"APJ-MY","sl_target":90,"hc":11,"phase_offset":175},
+  {"name":"TS_MY_CritAcct","region":"APJ-MY","sl_target":85,"hc":9,"phase_offset":215},
+  {"name":"TS_KR_ProDB","region":"APJ-KR","sl_target":91,"hc":13,"phase_offset":25},
+  {"name":"TS_KR_ProCNX","region":"APJ-KR","sl_target":92,"hc":12,"phase_offset":65},
+  {"name":"TS_KR_Elite","region":"APJ-KR","sl_target":89,"hc":11,"phase_offset":105},
+  {"name":"TS_KR_LicKeys","region":"APJ-KR","sl_target":88,"hc":10,"phase_offset":145},
+  {"name":"TS_KR_VICHW","region":"APJ-KR","sl_target":87,"hc":11,"phase_offset":185},
+  {"name":"TS_KR_CritAcct","region":"APJ-KR","sl_target":90,"hc":10,"phase_offset":225},
+  {"name":"TS_TH_ProDB","region":"APJ-TH","sl_target":88,"hc":11,"phase_offset":35},
+  {"name":"TS_TH_ProCNX","region":"APJ-TH","sl_target":87,"hc":10,"phase_offset":75},
+  {"name":"TS_TH_Elite","region":"APJ-TH","sl_target":86,"hc":9,"phase_offset":115},
+  {"name":"TS_TH_LicKeys","region":"APJ-TH","sl_target":85,"hc":9,"phase_offset":155},
+  {"name":"TS_TH_VICHW","region":"APJ-TH","sl_target":89,"hc":10,"phase_offset":195},
+  {"name":"TS_TH_CritAcct","region":"APJ-TH","sl_target":84,"hc":8,"phase_offset":235},
+  {"name":"TS_BR_ProDB","region":"LATAM-BR","sl_target":89,"hc":12,"phase_offset":50},
+  {"name":"TS_BR_ProCNX","region":"LATAM-BR","sl_target":90,"hc":11,"phase_offset":90},
+  {"name":"TS_BR_Elite","region":"LATAM-BR","sl_target":88,"hc":10,"phase_offset":130},
+  {"name":"TS_BR_LicKeys","region":"LATAM-BR","sl_target":87,"hc":9,"phase_offset":170},
+  {"name":"TS_BR_VICHW","region":"LATAM-BR","sl_target":86,"hc":11,"phase_offset":210},
+  {"name":"TS_BR_CritAcct","region":"LATAM-BR","sl_target":85,"hc":10,"phase_offset":250},
+  {"name":"TS_TW_ProDB","region":"APJ-TW","sl_target":90,"hc":11,"phase_offset":60},
+  {"name":"TS_TW_ProCNX","region":"APJ-TW","sl_target":89,"hc":10,"phase_offset":100},
+  {"name":"TS_TW_Elite","region":"APJ-TW","sl_target":88,"hc":9,"phase_offset":140},
+  {"name":"TS_TW_LicKeys","region":"APJ-TW","sl_target":91,"hc":10,"phase_offset":180},
+  {"name":"TS_TW_VICHW","region":"APJ-TW","sl_target":87,"hc":9,"phase_offset":220},
+  {"name":"TS_TW_CritAcct","region":"APJ-TW","sl_target":86,"hc":8,"phase_offset":260}
+];
+const AGENT_POOLS = {
+  "APJ-IN": [
+    {"name":"Patel_R","id":"6410001"},{"name":"Sharma_D","id":"6410002"},{"name":"Kumar_V","id":"6410003"},
+    {"name":"Singh_A","id":"6410004"},{"name":"Mehta_S","id":"6410005"},{"name":"Gupta_N","id":"6410006"},
+    {"name":"Reddy_K","id":"6410007"},{"name":"Nair_P","id":"6410008"},{"name":"Iyer_S","id":"6410009"},
+    {"name":"Bose_R","id":"6410010"},{"name":"Das_T","id":"6410011"},{"name":"Roy_M","id":"6410012"},
+    {"name":"Ghosh_A","id":"6410013"},{"name":"Mukherjee_D","id":"6410014"},{"name":"Chatterjee_B","id":"6410015"},
+    {"name":"Banerjee_S","id":"6410016"}
+  ],
+  "APJ-CN": [
+    {"name":"YIXIANG_L","id":"6477169"},{"name":"Felix_Fu","id":"6476092"},{"name":"HAO_XIANG","id":"6477171"},
+    {"name":"SHAOYI_L","id":"6477167"},{"name":"Jm_zhou","id":"6476694"},{"name":"Chen_Burn","id":"6419456"},
+    {"name":"WENYAO_LI","id":"6451122"},{"name":"YANG_L","id":"6477174"},{"name":"YIBIAO_Z","id":"6451220"},
+    {"name":"Kirin_Huang","id":"6451585"},{"name":"Nadan_Guo","id":"6481475"},{"name":"Hao_Huang3","id":"6480903"}
+  ],
+  "APJ-AU": [
+    {"name":"Smith_J","id":"6420001"},{"name":"Jones_K","id":"6420002"},{"name":"Brown_L","id":"6420003"},
+    {"name":"Wilson_M","id":"6420004"},{"name":"Taylor_N","id":"6420005"},{"name":"Anderson_P","id":"6420006"},
+    {"name":"Thomas_R","id":"6420007"},{"name":"Jackson_S","id":"6420008"},{"name":"White_T","id":"6420009"},
+    {"name":"Harris_U","id":"6420010"}
+  ],
+  "EMEA": [
+    {"name":"Bauer_H","id":"6450001"},{"name":"Schmidt_K","id":"6450002"},{"name":"Muller_T","id":"6450003"},
+    {"name":"Weber_F","id":"6450004"},{"name":"Garcia_M","id":"6460001"},{"name":"Lopez_C","id":"6460002"},
+    {"name":"Martinez_R","id":"6460003"},{"name":"Dubois_P","id":"6470001"},{"name":"Martin_L","id":"6470002"},
+    {"name":"Rossi_G","id":"6480001"},{"name":"Ferrari_M","id":"6480002"},{"name":"VanDijk_R","id":"6490001"},
+    {"name":"DeVries_K","id":"6490002"},{"name":"Kowalski_P","id":"6500001"},{"name":"Nowak_M","id":"6500002"}
+  ],
+  "APJ-HK": [
+    {"name":"Chan_KW","id":"6530001"},{"name":"Wong_HM","id":"6530002"},{"name":"Lee_PK","id":"6530003"},
+    {"name":"Lau_SY","id":"6530004"},{"name":"Cheung_WL","id":"6530005"},{"name":"Ng_TF","id":"6530006"},
+    {"name":"Ho_CK","id":"6530007"},{"name":"Yip_MH","id":"6530008"},{"name":"Tam_YS","id":"6530009"},
+    {"name":"Chow_BW","id":"6530010"},{"name":"Tsang_HK","id":"6530011"},{"name":"Fong_RL","id":"6530012"},
+    {"name":"Kwok_SC","id":"6530013"}
+  ],
+  "APJ-MY": [
+    {"name":"Ahmad_F","id":"6540001"},{"name":"Lim_CK","id":"6540002"},{"name":"Raj_M","id":"6540003"},
+    {"name":"Tan_WH","id":"6540004"},{"name":"Ismail_H","id":"6540005"},{"name":"Ong_BL","id":"6540006"},
+    {"name":"Muthu_K","id":"6540007"},{"name":"Yong_SH","id":"6540008"},{"name":"Kaur_G","id":"6540009"},
+    {"name":"Chin_JY","id":"6540010"},{"name":"Abdullah_N","id":"6540011"}
+  ],
+  "APJ-KR": [
+    {"name":"Kim_JH","id":"6550001"},{"name":"Lee_SY","id":"6550002"},{"name":"Park_MK","id":"6550003"},
+    {"name":"Choi_HJ","id":"6550004"},{"name":"Jung_YS","id":"6550005"},{"name":"Yoon_DH","id":"6550006"},
+    {"name":"Lim_SW","id":"6550007"},{"name":"Han_GR","id":"6550008"},{"name":"Oh_JW","id":"6550009"},
+    {"name":"Shin_BK","id":"6550010"},{"name":"Jang_HS","id":"6550011"},{"name":"Kwon_YJ","id":"6550012"},
+    {"name":"Bae_CH","id":"6550013"}
+  ],
+  "APJ-TH": [
+    {"name":"Somchai_P","id":"6560001"},{"name":"Nattaporn_S","id":"6560002"},{"name":"Wipada_K","id":"6560003"},
+    {"name":"Tanakorn_M","id":"6560004"},{"name":"Siriwan_R","id":"6560005"},{"name":"Chaiwat_T","id":"6560006"},
+    {"name":"Noppadon_L","id":"6560007"},{"name":"Orawan_C","id":"6560008"},{"name":"Prayuth_N","id":"6560009"},
+    {"name":"Montri_S","id":"6560010"},{"name":"Sumalee_P","id":"6560011"}
+  ],
+  "LATAM-BR": [
+    {"name":"Silva_M","id":"6570001"},{"name":"Santos_R","id":"6570002"},{"name":"Oliveira_F","id":"6570003"},
+    {"name":"Souza_C","id":"6570004"},{"name":"Pereira_L","id":"6570005"},{"name":"Costa_A","id":"6570006"},
+    {"name":"Ferreira_G","id":"6570007"},{"name":"Alves_B","id":"6570008"},{"name":"Rodrigues_T","id":"6570009"},
+    {"name":"Lima_D","id":"6570010"},{"name":"Barbosa_J","id":"6570011"},{"name":"Nascimento_P","id":"6570012"}
+  ],
+  "APJ-TW": [
+    {"name":"Chen_YT","id":"6580001"},{"name":"Lin_MW","id":"6580002"},{"name":"Huang_SH","id":"6580003"},
+    {"name":"Wu_JC","id":"6580004"},{"name":"Cheng_PY","id":"6580005"},{"name":"Hsu_KL","id":"6580006"},
+    {"name":"Tsai_WC","id":"6580007"},{"name":"Chang_HF","id":"6580008"},{"name":"Yang_TH","id":"6580009"},
+    {"name":"Chou_MR","id":"6580010"},{"name":"Lai_YN","id":"6580011"}
+  ]
+};
+
+// Same gradual phase function as RTA dashboards — always in sync
+function getPhase(sk) {
+    const now = Math.floor(Date.now() / 1000);
+    const pct = ((now + sk.phase_offset) % CYCLE_SEC) / CYCLE_SEC;
+    const hc  = sk.hc;
+    let sl, queue, avail, on_calls, on_aux, ocw_sec;
+
+    if (pct < 0.25) {
+        const t = pct / 0.25;
+        sl = sk.sl_target + 5 - t*2; queue=0;
+        avail=Math.floor(hc*0.35); on_calls=Math.floor(hc*0.55);
+        on_aux=Math.max(0,hc-avail-on_calls); ocw_sec=0;
+    } else if (pct < 0.50) {
+        const t=(pct-0.25)/0.25;
+        sl=(sk.sl_target+3)-t*(sk.sl_target-67);
+        queue=Math.floor(t*6);
+        avail=Math.max(0,Math.floor(hc*0.35*(1-t)));
+        on_aux=Math.floor(hc*0.15+t*hc*0.2);
+        on_calls=Math.max(0,hc-avail-on_aux); ocw_sec=Math.floor(t*80);
+    } else if (pct < 0.65) {
+        const t=(pct-0.50)/0.15;
+        sl=67-t*6; queue=6+Math.floor(t*3);
+        avail=0; on_aux=Math.floor(hc*0.35);
+        on_calls=Math.max(0,hc-on_aux); ocw_sec=80+Math.floor(t*35);
+    } else if (pct < 0.82) {
+        const t=(pct-0.65)/0.17;
+        sl=61+t*(sk.sl_target+3-61);
+        queue=Math.max(0,Math.floor((1-t)*9));
+        avail=Math.floor(t*hc*0.35);
+        on_aux=Math.floor(hc*0.35*(1-t*0.7));
+        on_calls=Math.max(0,hc-avail-on_aux);
+        ocw_sec=Math.max(0,Math.floor((1-t)*115));
+    } else {
+        const t=(pct-0.82)/0.18;
+        sl=sk.sl_target+2+t*3; queue=0;
+        avail=Math.floor(hc*0.3+t*hc*0.05);
+        on_calls=Math.floor(hc*0.55);
+        on_aux=Math.max(0,hc-avail-on_calls); ocw_sec=0;
+    }
+    sl=Math.max(60,Math.min(99,Math.round(sl*10)/10));
+    on_calls=Math.max(0,on_calls); on_aux=Math.max(0,on_aux); avail=Math.max(0,avail);
+    const om=Math.floor(ocw_sec/60), os_=ocw_sec%60;
+    const ocw=queue>0?String(om).padStart(2,'0')+':'+String(os_).padStart(2,'0'):'00:00';
+    return {sl,queue,avail,on_calls,on_aux,ocw,ocw_sec};
+}
+
+function buildAgents(sk, phase) {
+    const pool   = AGENT_POOLS[sk.region] || [];
+    const hc     = sk.hc;
+    const agents = pool.slice(0, hc);
+    const result = [];
+    let auxUsed=0, acdUsed=0, availUsed=0;
+    const needAux   = phase.on_aux;
+    const needAcd   = phase.on_calls;
+    const needAvail = phase.avail;
+    const now       = Math.floor(Date.now() / 1000);
+
+    agents.forEach((a, i) => {
+        let state, aux_reason='', time_sec=0;
+        if (auxUsed < needAux) {
+            state='AUX'; auxUsed++;
+            // stagger aux times so agents aren't all at same time
+            const base = phase.ocw_sec > 0 ? phase.ocw_sec + 60 : 300;
+            time_sec = base + i*120 + (now % 30);
+            // pick AUX code based on phase
+            const p = ((now + sk.phase_offset + i*17) % CYCLE_SEC) / CYCLE_SEC;
+            if (p < 0.5)       aux_reason = 'AUX 2';
+            else if (p < 0.75) aux_reason = 'AUX 6';
+            else               aux_reason = 'AUX 3';
+        } else if (acdUsed < needAcd) {
+            state='ACD'; acdUsed++;
+            time_sec = 120 + i*80 + (now % 60);
+        } else if (availUsed < needAvail) {
+            state='AVAIL'; availUsed++;
+            time_sec = 30 + i*20;
+        } else {
+            state='ACW';
+            time_sec = 30 + i*15;
+        }
+        const tm = Math.floor(time_sec/60), ts = time_sec%60;
+        const timeStr = String(tm).padStart(2,'0')+':'+String(ts).padStart(2,'0');
+        const tc = state==='AUX' ? (time_sec>=1200?'time-crit':time_sec>=900?'time-warn':'time-norm') : 'time-norm';
+        const sc = {AUX:'state-aux',AVAIL:'state-avail',ACD:'state-acd',ACW:'state-acw'}[state]||'';
+        result.push({name:a.name, id:a.id, role:'BCKP', aux_reason, state, sc, tc, timeStr, skill:sk.name});
+    });
+    return result;
+}
+
+function slClass(sl, tgt) {
+    if(sl>=tgt+5) return 'sl-high';
+    if(sl>=tgt)   return 'sl-good';
+    if(sl>=tgt-8) return 'sl-amber';
+    if(sl>=tgt-18)return 'sl-red';
+    return 'sl-black';
+}
+
+function render() {
+    const skillName = document.getElementById('skill-select').value;
+    const sk        = ALL_SKILLS.find(s => s.name === skillName);
+    if (!sk) return;
+    const phase = getPhase(sk);
+    const sl    = phase.sl;
+    const off   = phase.on_calls + phase.queue + 2;
+    const acc   = Math.round(sl/100*off);
+
+    document.getElementById('skill-title').textContent = skillName + ' — ' + sk.region;
+    document.getElementById('s-ciq').textContent  = phase.queue;
+    document.getElementById('s-ciq').className    = 'stat-val '+(phase.queue>0?'red':'green');
+    document.getElementById('s-ocw').textContent  = phase.ocw;
+    document.getElementById('s-ocw').className    = 'stat-val '+(phase.ocw!=='00:00'?'amber':'green');
+    document.getElementById('s-offered').textContent    = off;
+    document.getElementById('s-acceptable').textContent = acc;
+    document.getElementById('s-sl').innerHTML = '<span class="sl-badge '+slClass(sl,sk.sl_target)+'">'+sl.toFixed(1)+'%</span>';
+    document.getElementById('s-staffed').textContent = sk.hc;
+    document.getElementById('s-avail').textContent   = phase.avail;
+    document.getElementById('s-avail').className     = 'stat-val '+(phase.avail>0?'green':'red');
+    document.getElementById('s-on-acd').textContent  = phase.on_calls;
+    document.getElementById('s-on-aux').textContent  = phase.on_aux;
+    document.getElementById('s-on-aux').className    = 'stat-val '+(phase.on_aux>0?'amber':'green');
+
+    const agents = buildAgents(sk, phase);
+    document.getElementById('agent-count').textContent = agents.length;
+    const tbody = document.getElementById('agent-tbody');
+    tbody.innerHTML = '';
+    agents.forEach(a => {
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+            '<td style="font-weight:600">'+a.name+'</td>'+
+            '<td style="color:#90caf9">'+a.id+'</td>'+
+            '<td>'+a.role+'</td>'+
+            '<td>'+(a.aux_reason||'—')+'</td>'+
+            '<td><span class="state '+a.sc+'">'+a.state+'</span></td>'+
+            '<td>'+(a.state==='ACD'?'IN':'—')+'</td>'+
+            '<td style="color:#90caf9">'+(a.state==='ACD'?a.skill:'—')+'</td>'+
+            '<td style="text-align:center">3</td>'+
+            '<td class="'+a.tc+'">'+a.timeStr+'</td>'+
+            '<td style="color:#546e7a">—</td>';
+        tbody.appendChild(tr);
+    });
+
+    const now = new Date();
+    document.getElementById('clock').textContent =
+        now.toLocaleDateString('en-US')+' '+now.toLocaleTimeString('en-US',{hour12:false});
+    document.getElementById('footer-skill').textContent = 'Skill: '+skillName+' | Region: '+sk.region;
+    document.getElementById('footer-time').textContent  = 'Updated: '+now.toLocaleTimeString();
+}
+
+render();
+setInterval(render, 5000);
+</script>
+</body>
+</html>

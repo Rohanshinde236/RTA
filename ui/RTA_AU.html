@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>RTA — APJ-AU</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:#1e3c72;min-height:100vh}
+.top-bar{background:#1e3c72;color:white;padding:8px 20px;display:flex;justify-content:space-between;align-items:center}
+.top-bar h1{font-size:1em;font-weight:600}
+.page-body{padding:12px 16px}
+.table-wrap{background:white;border-radius:6px;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,0.15)}
+table.rta{width:100%;border-collapse:collapse}
+table.rta thead tr{background:#dde3ec}
+table.rta thead th{padding:8px 10px;font-size:0.76em;font-weight:700;color:#333;text-align:center;border:1px solid #c5cbd8;white-space:nowrap}
+table.rta thead th:first-child{text-align:left}
+table.rta tbody tr{border-bottom:1px solid #e0e0e0}
+table.rta tbody tr:nth-child(even){background:#f9f9f9}
+table.rta tbody tr:hover{background:#eef2fa}
+table.rta tbody td{padding:6px 8px;text-align:center;font-size:0.82em;border:1px solid #e5e5e5;font-weight:600;color:#333}
+table.rta tbody td:first-child{text-align:left;font-weight:700;color:#222;background:#f5f5f5;font-size:0.8em}
+.q-zero{color:#aaa;font-weight:400}.q-warn{background:#ff9800;color:white;border-radius:3px;padding:2px 7px;display:inline-block}
+.q-crit{background:#d32f2f;color:white;border-radius:3px;padding:2px 7px;display:inline-block}
+.ocw-zero{color:#aaa;font-weight:400}.ocw-warn{background:#ff9800;color:white;border-radius:3px;padding:2px 7px;display:inline-block}
+.ocw-crit{background:#d32f2f;color:white;border-radius:3px;padding:2px 7px;display:inline-block}
+.av-ok{color:#333}.av-zero{background:#d32f2f;color:white;border-radius:3px;padding:2px 7px;display:inline-block;min-width:24px}
+.calls-ok{color:#1565c0;font-weight:700}.aux-warn{background:#f57c00;color:white;border-radius:3px;padding:2px 7px;display:inline-block}
+.aux-ok{color:#6a1b9a;font-weight:700}.aux-zero{color:#aaa}
+.sl-badge{display:inline-block;padding:3px 12px;border-radius:3px;font-weight:700;font-size:0.92em;color:white;min-width:48px}
+.sl-good{background:#388e3c}.sl-amber{background:#f57c00}.sl-red{background:#c62828}.sl-black{background:#111}
+.sl-high{background:#1976d2}
+.upd-bar{padding:4px 16px;background:#f5f5f5;font-size:0.7em;color:#888;text-align:right}
+</style>
+</head>
+<body>
+<div id="login-page" style="display:none"></div>
+<div id="dashboard-page">
+  <div class="top-bar">
+    <h1>📊 Real-Time Adherence — APJ-AU | Client ProSupport AUS</h1>
+    <span id="user-info-label" style="font-size:0.8em;opacity:0.85">Monitor</span>
+  </div>
+  <div class="page-body">
+    <div class="table-wrap">
+      
+<table class="rta">
+<thead><tr>
+  <th>Skill Name</th><th>Calls in Queue</th><th>OCW</th><th>Skill Avail</th>
+  <th>On Calls</th><th>On AUX</th><th>Headcount</th><th>Offered</th>
+  <th>Acceptable</th><th>Service Level</th>
+</tr></thead>
+<tbody id="rta-tbody"></tbody>
+</table>
+
+      <div class="upd-bar">Updated: <span id="upd-time">--</span> &nbsp;|&nbsp; Refresh: 5s &nbsp;|&nbsp; Cycle: 4 min</div>
+    </div>
+  </div>
+</div>
+<script>
+const CYCLE_SEC = 240;
+const SKILLS = [{"name": "TS_AU_ProDB", "sl_target": 88, "hc": 10, "phase_offset": 10}, {"name": "TS_AU_ProCNX", "sl_target": 88, "hc": 9, "phase_offset": 50}, {"name": "TS_AU_Elite", "sl_target": 92, "hc": 8, "phase_offset": 90}, {"name": "TS_AU_LicKeys", "sl_target": 80, "hc": 8, "phase_offset": 130}, {"name": "TS_AU_VICHW", "sl_target": 85, "hc": 7, "phase_offset": 170}, {"name": "TS_AU_CritAcct", "sl_target": 95, "hc": 7, "phase_offset": 210}];
+
+function getPhase(sk) {
+    const now  = Math.floor(Date.now() / 1000);
+    const pct  = ((now + sk.phase_offset) % CYCLE_SEC) / CYCLE_SEC;
+    const hc   = sk.hc;
+    const tgt  = sk.sl_target;
+    let sl, queue, avail, on_calls, on_aux, ocw_sec;
+
+    if (pct < 0.25) {
+        const t = pct / 0.25;
+        sl = tgt + 5 - t * 2; queue = 0;
+        avail = Math.floor(hc * 0.35); on_calls = Math.floor(hc * 0.55);
+        on_aux = Math.max(0, hc - avail - on_calls); ocw_sec = 0;
+    } else if (pct < 0.50) {
+        const t = (pct - 0.25) / 0.25;
+        sl = (tgt + 3) - t * (tgt - 67);
+        queue = Math.floor(t * 6);
+        avail = Math.max(0, Math.floor(hc * 0.35 * (1 - t)));
+        on_aux = Math.floor(hc * 0.15 + t * hc * 0.2);
+        on_calls = Math.max(0, hc - avail - on_aux);
+        ocw_sec = Math.floor(t * 80);
+    } else if (pct < 0.65) {
+        const t = (pct - 0.50) / 0.15;
+        sl = 67 - t * 6; queue = 6 + Math.floor(t * 3);
+        avail = 0; on_aux = Math.floor(hc * 0.35);
+        on_calls = Math.max(0, hc - on_aux); ocw_sec = 80 + Math.floor(t * 35);
+    } else if (pct < 0.82) {
+        const t = (pct - 0.65) / 0.17;
+        sl = 61 + t * (tgt + 3 - 61);
+        queue = Math.max(0, Math.floor((1 - t) * 9));
+        avail = Math.floor(t * hc * 0.35);
+        on_aux = Math.floor(hc * 0.35 * (1 - t * 0.7));
+        on_calls = Math.max(0, hc - avail - on_aux);
+        ocw_sec = Math.max(0, Math.floor((1 - t) * 115));
+    } else {
+        const t = (pct - 0.82) / 0.18;
+        sl = tgt + 2 + t * 3; queue = 0;
+        avail = Math.floor(hc * 0.3 + t * hc * 0.05);
+        on_calls = Math.floor(hc * 0.55);
+        on_aux = Math.max(0, hc - avail - on_calls); ocw_sec = 0;
+    }
+
+    sl = Math.max(60, Math.min(99, Math.round(sl * 10) / 10));
+    on_calls = Math.max(0, on_calls); on_aux = Math.max(0, on_aux);
+    avail = Math.max(0, avail);
+    const ocw_m = Math.floor(ocw_sec / 60);
+    const ocw_s = ocw_sec % 60;
+    const ocw   = queue > 0 ? String(ocw_m).padStart(2,'0')+':'+String(ocw_s).padStart(2,'0') : '00:00';
+    const off   = on_calls + queue + Math.floor(Math.random()*2);
+    const acc   = Math.round(sl / 100 * off);
+    return {sl, queue, avail, on_calls, on_aux, ocw, ocw_sec, offered:off, acceptable:acc};
+}
+
+function slClass(sl, tgt) {
+    if (sl >= tgt+5) return 'sl-high';
+    if (sl >= tgt)   return 'sl-good';
+    if (sl >= tgt-8) return 'sl-amber';
+    if (sl >= tgt-18)return 'sl-red';
+    return 'sl-black';
+}
+function qH(q){return q===0?'<span class="q-zero">0</span>':q>=5?'<span class="q-crit">'+q+'</span>':'<span class="q-warn">'+q+'</span>';}
+function oH(o,q){if(q===0||o==='00:00')return'<span class="ocw-zero">00:00</span>';const m=parseInt(o);return m>=1?'<span class="ocw-crit">'+o+'</span>':'<span class="ocw-warn">'+o+'</span>';}
+function aH(a,q){return(a===0&&q>0)?'<span class="av-zero">0</span>':'<span class="av-ok">'+a+'</span>';}
+function xH(x,q){return x===0?'<span class="aux-zero">0</span>':q>0?'<span class="aux-warn">'+x+'</span>':'<span class="aux-ok">'+x+'</span>';}
+
+function render() {
+    const tbody = document.getElementById('rta-tbody');
+    tbody.innerHTML = '';
+    SKILLS.forEach(sk => {
+        const p = getPhase(sk);
+        const tr = document.createElement('tr');
+        tr.setAttribute('data-skill', sk.name);
+        tr.setAttribute('data-queue', p.queue);
+        tr.setAttribute('data-ocw', p.ocw);
+        tr.setAttribute('data-avail', p.avail);
+        tr.setAttribute('data-sl', p.sl);
+        tr.setAttribute('data-offered', p.offered);
+        tr.setAttribute('data-acceptable', p.acceptable);
+        tr.setAttribute('data-on-calls', p.on_calls);
+        tr.setAttribute('data-on-aux', p.on_aux);
+        tr.setAttribute('data-headcount', sk.hc);
+        tr.innerHTML =
+            '<td>'+sk.name+'</td>'+
+            '<td>'+qH(p.queue)+'</td>'+
+            '<td>'+oH(p.ocw,p.queue)+'</td>'+
+            '<td>'+aH(p.avail,p.queue)+'</td>'+
+            '<td><span class="'+(p.on_calls>0?'calls-ok':'aux-zero')+'">'+p.on_calls+'</span></td>'+
+            '<td>'+xH(p.on_aux,p.queue)+'</td>'+
+            '<td><b>'+sk.hc+'</b></td>'+
+            '<td>'+p.offered+'</td>'+
+            '<td>'+p.acceptable+'</td>'+
+            '<td><span class="sl-badge '+slClass(p.sl,sk.sl_target)+'">'+p.sl.toFixed(1)+'%</span></td>';
+        tbody.appendChild(tr);
+    });
+    document.getElementById('upd-time').textContent = new Date().toLocaleTimeString();
+}
+
+document.addEventListener('DOMContentLoaded', () => { render(); });
+setInterval(render, 5000);
+</script>
+</body>
+</html>
