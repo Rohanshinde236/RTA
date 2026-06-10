@@ -51,6 +51,12 @@ ui/RTA_AU.html
 ui/RTA_CN.html
 ui/RTA_EMEA.html
 ui/CMS.html
+ui/RTA_HK.html
+ui/RTA_MY.html
+ui/RTA_KR.html
+ui/RTA_TH.html
+ui/RTA_BR.html
+ui/RTA_TW.html
 
 # ── React / Node ──────────────────────────────────────────────────
 frontend/node_modules/

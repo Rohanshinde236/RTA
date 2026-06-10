@@ -2,12 +2,18 @@ import { useEffect, useState } from 'react'
 import { Save, CheckCircle, ChevronDown, ChevronRight } from 'lucide-react'
 
 const REGION_INFO = {
-  'APJ-IN': { name: 'India',     flag: '🇮🇳', accent: 'border-blue-500/40',   badge: 'bg-blue-500/10   text-blue-400   border-blue-500/30'   },
-  'APJ-CN': { name: 'China',     flag: '🇨🇳', accent: 'border-red-500/40',    badge: 'bg-red-500/10    text-red-400    border-red-500/30'    },
-  'APJ-AU': { name: 'Australia', flag: '🇦🇺', accent: 'border-green-500/40',  badge: 'bg-green-500/10  text-green-400  border-green-500/30'  },
-  'EMEA':   { name: 'EMEA',      flag: '🌍',  accent: 'border-purple-500/40', badge: 'bg-purple-500/10 text-purple-400 border-purple-500/30' },
+  'APJ-IN':  { name: 'India',     flag: '🇮🇳', accent: 'border-blue-500/40',   badge: 'bg-blue-500/10   text-blue-400   border-blue-500/30'   },
+  'APJ-CN':  { name: 'China',     flag: '🇨🇳', accent: 'border-red-500/40',    badge: 'bg-red-500/10    text-red-400    border-red-500/30'    },
+  'APJ-AU':  { name: 'Australia', flag: '🇦🇺', accent: 'border-green-500/40',  badge: 'bg-green-500/10  text-green-400  border-green-500/30'  },
+  'EMEA':    { name: 'EMEA',      flag: '🌍',  accent: 'border-purple-500/40', badge: 'bg-purple-500/10 text-purple-400 border-purple-500/30' },
+  'APJ-HK':  { name: 'Hong Kong', flag: '🇭🇰', accent: 'border-cyan-500/40',   badge: 'bg-cyan-500/10   text-cyan-400   border-cyan-500/30'   },
+  'APJ-MY':  { name: 'Malaysia',  flag: '🇲🇾', accent: 'border-teal-500/40',   badge: 'bg-teal-500/10   text-teal-400   border-teal-500/30'   },
+  'APJ-KR':  { name: 'Korea',     flag: '🇰🇷', accent: 'border-rose-500/40',   badge: 'bg-rose-500/10   text-rose-400   border-rose-500/30'   },
+  'APJ-TH':  { name: 'Thailand',  flag: '🇹🇭', accent: 'border-yellow-500/40', badge: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30' },
+  'LATAM-BR':{ name: 'Brazil',    flag: '🇧🇷', accent: 'border-lime-500/40',   badge: 'bg-lime-500/10   text-lime-400   border-lime-500/30'   },
+  'APJ-TW':  { name: 'Taiwan',    flag: '🇹🇼', accent: 'border-sky-500/40',    badge: 'bg-sky-500/10    text-sky-400    border-sky-500/30'    },
 }
-const REGION_ORDER = ['APJ-IN', 'APJ-CN', 'APJ-AU', 'EMEA']
+const REGION_ORDER = ['APJ-IN', 'APJ-CN', 'APJ-AU', 'EMEA', 'APJ-HK', 'APJ-MY', 'APJ-KR', 'APJ-TH', 'LATAM-BR', 'APJ-TW']
 
 export default function SkillThresholds() {
   const [skills,    setSkills]   = useState({})

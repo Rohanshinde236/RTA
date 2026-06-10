@@ -92,8 +92,10 @@ export default function Sidebar() {
 
       {/* Footer */}
       <div className="px-4 py-3 border-t border-[#1e3354]">
-        <div className="text-[10px] text-slate-600 text-center">
-          APJ-IN · APJ-CN · APJ-AU · EMEA
+        <div className="text-[10px] text-slate-600 text-center leading-relaxed">
+          APJ-IN · APJ-CN · APJ-AU · EMEA<br/>
+          APJ-HK · APJ-MY · APJ-KR · APJ-TH<br/>
+          LATAM-BR · APJ-TW
         </div>
       </div>
     </aside>

@@ -499,6 +499,30 @@ def portal_au():
 def portal_emea():
     return _serve_ui_file("RTA_EMEA.html")
 
+@app.route("/portal/hk")
+def portal_hk():
+    return _serve_ui_file("RTA_HK.html")
+
+@app.route("/portal/my")
+def portal_my():
+    return _serve_ui_file("RTA_MY.html")
+
+@app.route("/portal/kr")
+def portal_kr():
+    return _serve_ui_file("RTA_KR.html")
+
+@app.route("/portal/th")
+def portal_th():
+    return _serve_ui_file("RTA_TH.html")
+
+@app.route("/portal/br")
+def portal_br():
+    return _serve_ui_file("RTA_BR.html")
+
+@app.route("/portal/tw")
+def portal_tw():
+    return _serve_ui_file("RTA_TW.html")
+
 
 @app.route("/legacy/regions/save", methods=["POST"])
 def regions_save():
@@ -782,14 +806,36 @@ SKILLS_CONTENT = """
 """
 
 SKILL_REGION_MAP = {
+    # APJ-IN (India)
     "TS_CSTCE": "APJ-IN", "TS_CSTElite": "APJ-IN", "TS_LicKeys": "APJ-IN",
     "TS_VICHW": "APJ-IN", "TS_CSTVCE": "APJ-IN", "TS_CSTCritAcct": "APJ-IN",
+    # APJ-CN (China)
     "TS_CN_ProDB": "APJ-CN", "TS_CN_ProCNX": "APJ-CN", "TS_CN_Elite": "APJ-CN",
     "TS_CN_LicKeys": "APJ-CN", "TS_CN_VICHW": "APJ-CN", "TS_CN_CritAcct": "APJ-CN",
+    # APJ-AU (Australia)
     "TS_AU_ProDB": "APJ-AU", "TS_AU_ProCNX": "APJ-AU", "TS_AU_Elite": "APJ-AU",
     "TS_AU_LicKeys": "APJ-AU", "TS_AU_VICHW": "APJ-AU", "TS_AU_CritAcct": "APJ-AU",
+    # EMEA
     "TS_MLSCST_GER": "EMEA", "TS_MLSCST_SPA": "EMEA", "TS_MLSCST_FRA": "EMEA",
     "TS_MLSCST_ITA": "EMEA", "TS_MLSCST_NLD": "EMEA", "TS_MLSCST_POL": "EMEA",
+    # APJ-HK (Hong Kong)
+    "TS_HK_ProDB": "APJ-HK", "TS_HK_ProCNX": "APJ-HK", "TS_HK_Elite": "APJ-HK",
+    "TS_HK_LicKeys": "APJ-HK", "TS_HK_VICHW": "APJ-HK", "TS_HK_CritAcct": "APJ-HK",
+    # APJ-MY (Malaysia)
+    "TS_MY_ProDB": "APJ-MY", "TS_MY_ProCNX": "APJ-MY", "TS_MY_Elite": "APJ-MY",
+    "TS_MY_LicKeys": "APJ-MY", "TS_MY_VICHW": "APJ-MY", "TS_MY_CritAcct": "APJ-MY",
+    # APJ-KR (Korea)
+    "TS_KR_ProDB": "APJ-KR", "TS_KR_ProCNX": "APJ-KR", "TS_KR_Elite": "APJ-KR",
+    "TS_KR_LicKeys": "APJ-KR", "TS_KR_VICHW": "APJ-KR", "TS_KR_CritAcct": "APJ-KR",
+    # APJ-TH (Thailand)
+    "TS_TH_ProDB": "APJ-TH", "TS_TH_ProCNX": "APJ-TH", "TS_TH_Elite": "APJ-TH",
+    "TS_TH_LicKeys": "APJ-TH", "TS_TH_VICHW": "APJ-TH", "TS_TH_CritAcct": "APJ-TH",
+    # LATAM-BR (Brazil)
+    "TS_BR_ProDB": "LATAM-BR", "TS_BR_ProCNX": "LATAM-BR", "TS_BR_Elite": "LATAM-BR",
+    "TS_BR_LicKeys": "LATAM-BR", "TS_BR_VICHW": "LATAM-BR", "TS_BR_CritAcct": "LATAM-BR",
+    # APJ-TW (Taiwan)
+    "TS_TW_ProDB": "APJ-TW", "TS_TW_ProCNX": "APJ-TW", "TS_TW_Elite": "APJ-TW",
+    "TS_TW_LicKeys": "APJ-TW", "TS_TW_VICHW": "APJ-TW", "TS_TW_CritAcct": "APJ-TW",
 }
 
 

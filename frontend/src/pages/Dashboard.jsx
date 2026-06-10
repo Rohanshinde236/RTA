@@ -3,15 +3,24 @@ import { Play, Square, RotateCcw, AlertTriangle, ExternalLink, Monitor } from 'l
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts'
 import { socket } from '../socket'
 
-// live_state.json keys: "rta", "cn", "au", "emea"
-// SKILL_REGION_MAP values: "APJ-IN", "APJ-CN", "APJ-AU", "EMEA"
-const TAG_TO_APJ = { rta: 'APJ-IN', cn: 'APJ-CN', au: 'APJ-AU', emea: 'EMEA' }
+// live_state.json keys: "rta", "cn", "au", "emea", "hk", "my", "kr", "th", "br", "tw"
+// SKILL_REGION_MAP values: "APJ-IN", "APJ-CN", "APJ-AU", "EMEA", "APJ-HK", "APJ-MY", "APJ-KR", "APJ-TH", "LATAM-BR", "APJ-TW"
+const TAG_TO_APJ = {
+  rta: 'APJ-IN', cn: 'APJ-CN', au: 'APJ-AU', emea: 'EMEA',
+  hk: 'APJ-HK', my: 'APJ-MY', kr: 'APJ-KR', th: 'APJ-TH', br: 'LATAM-BR', tw: 'APJ-TW',
+}
 
 const REGIONS = [
   { tag: 'rta',  name: 'India',     flag: '🇮🇳', abbr: 'IN', portalUrl: '/portal/rta'  },
   { tag: 'cn',   name: 'China',     flag: '🇨🇳', abbr: 'CN', portalUrl: '/portal/cn'   },
   { tag: 'au',   name: 'Australia', flag: '🇦🇺', abbr: 'AU', portalUrl: '/portal/au'   },
   { tag: 'emea', name: 'EMEA',      flag: '🌍',  abbr: 'EM', portalUrl: '/portal/emea' },
+  { tag: 'hk',   name: 'Hong Kong', flag: '🇭🇰', abbr: 'HK', portalUrl: '/portal/hk'   },
+  { tag: 'my',   name: 'Malaysia',  flag: '🇲🇾', abbr: 'MY', portalUrl: '/portal/my'   },
+  { tag: 'kr',   name: 'Korea',     flag: '🇰🇷', abbr: 'KR', portalUrl: '/portal/kr'   },
+  { tag: 'th',   name: 'Thailand',  flag: '🇹🇭', abbr: 'TH', portalUrl: '/portal/th'   },
+  { tag: 'br',   name: 'Brazil',    flag: '🇧🇷', abbr: 'BR', portalUrl: '/portal/br'   },
+  { tag: 'tw',   name: 'Taiwan',    flag: '🇹🇼', abbr: 'TW', portalUrl: '/portal/tw'   },
 ]
 
 function bandColor(band) {
@@ -167,6 +176,93 @@ function RegionCard({ region, liveState, isRunning, configRegion, configSkillCou
   )
 }
 
+function HealthSummaryBar({ liveState, isRunning, configRegions, skillRegionMap }) {
+  const total   = REGIONS.length
+  const active  = configRegions.filter(r => r.active !== false).length
+  const inactive = total - active
+
+  if (!isRunning) {
+    return (
+      <div className="rta-card px-5 py-3 flex flex-wrap items-center gap-4 text-xs">
+        <span className="font-semibold text-slate-400 uppercase tracking-wider">Health Summary</span>
+        <span className="text-slate-500">{total} regions configured · {active} active · {inactive} inactive</span>
+        <span className="text-slate-600 italic ml-auto">Start system to see live health</span>
+      </div>
+    )
+  }
+
+  // Aggregate live stats across all regions
+  let totalSkills = 0, breachedTotal = 0, leverTotal = 0, slaSum = 0, slaCount = 0
+  const bandCounts = { EXCELLENT: 0, HEALTHY: 0, WARNING: 0, CRITICAL: 0, SEVERE: 0 }
+
+  REGIONS.forEach(r => {
+    const rd = liveState?.[r.tag]
+    if (!rd?.skills) return
+    Object.values(rd.skills).forEach(s => {
+      totalSkills++
+      if (s.sla != null) { slaSum += s.sla; slaCount++ }
+      if (s.breached) breachedTotal++
+      if (s.lever_fired && s.lever_fired !== 'None') leverTotal++
+      if (s.band && bandCounts[s.band] !== undefined) bandCounts[s.band]++
+    })
+  })
+
+  const overallSla = slaCount ? (slaSum / slaCount).toFixed(1) : null
+  const overallBand = overallSla != null
+    ? (overallSla >= 95 ? 'EXCELLENT' : overallSla >= 90 ? 'HEALTHY' : overallSla >= 80 ? 'WARNING' : overallSla >= 70 ? 'CRITICAL' : 'SEVERE')
+    : null
+  const slaColor = overallBand === 'SEVERE' || overallBand === 'CRITICAL' ? 'text-red-400'
+    : overallBand === 'WARNING' ? 'text-amber-400' : 'text-emerald-400'
+
+  // Region health dots
+  const regionDots = REGIONS.map(r => {
+    const rd = liveState?.[r.tag]
+    if (!rd?.skills) return { tag: r.tag, flag: r.flag, color: 'bg-slate-600', label: 'No data' }
+    const skills = Object.values(rd.skills)
+    const worstBand = skills.reduce((worst, s) => {
+      const rank = { SEVERE: 5, CRITICAL: 4, WARNING: 3, HEALTHY: 2, EXCELLENT: 1 }
+      return (rank[s.band] || 0) > (rank[worst] || 0) ? s.band : worst
+    }, 'EXCELLENT')
+    const dotColor = worstBand === 'SEVERE' ? 'bg-red-500' : worstBand === 'CRITICAL' ? 'bg-orange-500'
+      : worstBand === 'WARNING' ? 'bg-amber-400' : 'bg-emerald-500'
+    return { tag: r.tag, flag: r.flag, color: dotColor, label: worstBand }
+  })
+
+  return (
+    <div className="rta-card px-5 py-3 flex flex-wrap items-center gap-4 text-xs">
+      <span className="font-semibold text-slate-400 uppercase tracking-wider">Health Summary</span>
+
+      {/* Overall SLA */}
+      {overallSla && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-slate-500">Overall SLA</span>
+          <span className={`font-bold text-sm ${slaColor}`}>{overallSla}%</span>
+        </div>
+      )}
+
+      {/* Band counts */}
+      <div className="flex items-center gap-2 text-slate-500 border-l border-[#1e3354] pl-4">
+        {bandCounts.SEVERE   > 0 && <span className="text-red-400 font-semibold">🔴 {bandCounts.SEVERE} SEVERE</span>}
+        {bandCounts.CRITICAL > 0 && <span className="text-orange-400 font-semibold">🟠 {bandCounts.CRITICAL} CRITICAL</span>}
+        {bandCounts.WARNING  > 0 && <span className="text-amber-400">🟡 {bandCounts.WARNING} WARNING</span>}
+        {bandCounts.HEALTHY  > 0 && <span className="text-green-400">🟢 {bandCounts.HEALTHY} HEALTHY</span>}
+        {bandCounts.EXCELLENT > 0 && <span className="text-emerald-400">✅ {bandCounts.EXCELLENT} EXCELLENT</span>}
+        {breachedTotal > 0 && <span className="text-red-400 border-l border-[#1e3354] pl-2">⚠ {breachedTotal} breached</span>}
+        {leverTotal    > 0 && <span className="text-orange-400">⚡ {leverTotal} levers</span>}
+      </div>
+
+      {/* Region dots */}
+      <div className="flex items-center gap-1.5 ml-auto">
+        {regionDots.map(d => (
+          <span key={d.tag} title={`${d.tag.toUpperCase()}: ${d.label}`}
+            className={`w-2.5 h-2.5 rounded-full ${d.color} cursor-default`} />
+        ))}
+        <span className="text-slate-600 ml-1">{total} regions</span>
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const [status,      setStatus]  = useState({ state: 'stopped', mode: 'full', last_checked: null })
   const [liveState,   setLive]    = useState(null)
@@ -308,6 +404,14 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Health Summary Bar */}
+      <HealthSummaryBar
+        liveState={liveState}
+        isRunning={isRunning}
+        configRegions={configRegions}
+        skillRegionMap={skillRegionMap}
+      />
 
       {/* Region cards */}
       <div>
