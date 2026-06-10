@@ -107,6 +107,12 @@ REGION_TO_QUEUE = {
     "cn":   "Client ProSupport CHN",
     "au":   "Client ProSupport AUS",
     "emea": "Client ProSupport EMEA",
+    "hk":   "Client ProSupport HKG",
+    "my":   "Client ProSupport MYS",
+    "kr":   "Client ProSupport KOR",
+    "th":   "Client ProSupport THA",
+    "br":   "Client ProSupport BRA",
+    "tw":   "Client ProSupport TWN",
 }
 
 
