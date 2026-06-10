@@ -92,6 +92,48 @@ AHT_TARGETS = {
     "TS_MLSCST_ITA":    22 * 60,
     "TS_MLSCST_NLD":    22 * 60,
     "TS_MLSCST_POL":    22 * 60,
+    # APJ-HK
+    "TS_HK_ProDB":      24 * 60,
+    "TS_HK_ProCNX":     24 * 60,
+    "TS_HK_Elite":      22 * 60,
+    "TS_HK_LicKeys":    26 * 60,
+    "TS_HK_VICHW":      20 * 60,
+    "TS_HK_CritAcct":   28 * 60,
+    # APJ-MY
+    "TS_MY_ProDB":      24 * 60,
+    "TS_MY_ProCNX":     24 * 60,
+    "TS_MY_Elite":      22 * 60,
+    "TS_MY_LicKeys":    26 * 60,
+    "TS_MY_VICHW":      20 * 60,
+    "TS_MY_CritAcct":   28 * 60,
+    # APJ-KR
+    "TS_KR_ProDB":      24 * 60,
+    "TS_KR_ProCNX":     24 * 60,
+    "TS_KR_Elite":      22 * 60,
+    "TS_KR_LicKeys":    26 * 60,
+    "TS_KR_VICHW":      20 * 60,
+    "TS_KR_CritAcct":   28 * 60,
+    # APJ-TH
+    "TS_TH_ProDB":      24 * 60,
+    "TS_TH_ProCNX":     24 * 60,
+    "TS_TH_Elite":      22 * 60,
+    "TS_TH_LicKeys":    26 * 60,
+    "TS_TH_VICHW":      20 * 60,
+    "TS_TH_CritAcct":   28 * 60,
+    # LATAM-BR
+    "TS_BR_ProDB":      24 * 60,
+    "TS_BR_ProCNX":     24 * 60,
+    "TS_BR_Elite":      22 * 60,
+    "TS_BR_LicKeys":    26 * 60,
+    "TS_BR_VICHW":      20 * 60,
+    "TS_BR_CritAcct":   28 * 60,
+    # APJ-TW
+    "TS_TW_ProDB":      24 * 60,
+    "TS_TW_ProCNX":     24 * 60,
+    "TS_TW_Elite":      22 * 60,
+    "TS_TW_LicKeys":    26 * 60,
+    "TS_TW_VICHW":      20 * 60,
+    "TS_TW_CritAcct":   28 * 60,
     # Default fallback
     "DEFAULT":          24 * 60,
 }
@@ -120,6 +162,30 @@ SKILLS_BY_REGION = {
     "emea": [
         "TS_MLSCST_GER", "TS_MLSCST_SPA", "TS_MLSCST_FRA",
         "TS_MLSCST_ITA", "TS_MLSCST_NLD", "TS_MLSCST_POL",
+    ],
+    "hk": [
+        "TS_HK_ProDB",  "TS_HK_ProCNX", "TS_HK_Elite",
+        "TS_HK_LicKeys","TS_HK_VICHW",  "TS_HK_CritAcct",
+    ],
+    "my": [
+        "TS_MY_ProDB",  "TS_MY_ProCNX", "TS_MY_Elite",
+        "TS_MY_LicKeys","TS_MY_VICHW",  "TS_MY_CritAcct",
+    ],
+    "kr": [
+        "TS_KR_ProDB",  "TS_KR_ProCNX", "TS_KR_Elite",
+        "TS_KR_LicKeys","TS_KR_VICHW",  "TS_KR_CritAcct",
+    ],
+    "th": [
+        "TS_TH_ProDB",  "TS_TH_ProCNX", "TS_TH_Elite",
+        "TS_TH_LicKeys","TS_TH_VICHW",  "TS_TH_CritAcct",
+    ],
+    "br": [
+        "TS_BR_ProDB",  "TS_BR_ProCNX", "TS_BR_Elite",
+        "TS_BR_LicKeys","TS_BR_VICHW",  "TS_BR_CritAcct",
+    ],
+    "tw": [
+        "TS_TW_ProDB",  "TS_TW_ProCNX", "TS_TW_Elite",
+        "TS_TW_LicKeys","TS_TW_VICHW",  "TS_TW_CritAcct",
     ],
 }
 # Default fallback — all skills

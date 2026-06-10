@@ -61,6 +61,9 @@ function render(){
     tr.setAttribute('data-skill',sk.name);tr.setAttribute('data-queue',p.queue);
     tr.setAttribute('data-sl',p.sl);tr.setAttribute('data-on-calls',p.on_calls);
     tr.setAttribute('data-on-aux',p.on_aux);tr.setAttribute('data-headcount',sk.hc);
+    tr.setAttribute('data-avail',p.avail);tr.setAttribute('data-ocw',p.ocw);
+    tr.setAttribute('data-offered',p.offered);tr.setAttribute('data-acceptable',p.acceptable);
+    tr.setAttribute('data-proj-sl',p.sl);
     tr.innerHTML='<td>'+sk.name+'</td>'
       +'<td>'+qH(p.queue)+'</td>'
       +'<td>'+oH(p.ocw,p.queue)+'</td>'
