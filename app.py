@@ -1449,12 +1449,18 @@ def _build_history_context(question: str) -> str:
     return context
 
 
-# Global rotating key index — persists across calls so SQL-gen and answer calls
-# never start from the same key, spreading load across all configured keys.
-_chat_key_index = 0
-_chat_key_lock  = threading.Lock()
+def _get_nvidia_cfg() -> tuple:
+    """Return (api_key, base_url, model) from config.env."""
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(BASE_DIR, "config.env"), override=False)
+    api_key  = os.getenv("NVIDIA_API_KEY", "").strip()
+    base_url = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1").strip()
+    model    = os.getenv("NVIDIA_MODEL",   "meta/llama-3.3-70b-instruct").strip()
+    return api_key, base_url, model
+
 
 def _get_groq_keys() -> list:
+    """Fallback: Groq keys if NVIDIA key is missing."""
     from dotenv import load_dotenv
     load_dotenv(os.path.join(BASE_DIR, "config.env"), override=False)
     keys = []
@@ -1467,29 +1473,44 @@ def _get_groq_keys() -> list:
 
 def _call_llm_raw(prompt: str, max_tokens: int = 600, is_sql: bool = False) -> str:
     """
-    Call Groq with round-robin key rotation.
-    is_sql=True uses a fast small model (separate rate-limit quota).
+    Call NVIDIA NIM (OpenAI-compatible) for all LLM tasks.
+    Falls back to Groq if NVIDIA key is not configured.
+    is_sql=True uses lower temperature for deterministic SQL.
     """
-    import requests as req
-    global _chat_key_index
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(BASE_DIR, "config.env"), override=False)
 
+    nvidia_key, nvidia_base_url, nvidia_model = _get_nvidia_cfg()
+
+    # ── Primary: NVIDIA NIM ──────────────────────────────────────────────
+    if nvidia_key and len(nvidia_key) > 20:
+        try:
+            from openai import OpenAI
+            client = OpenAI(base_url=nvidia_base_url, api_key=nvidia_key)
+            completion = client.chat.completions.create(
+                model=nvidia_model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1 if is_sql else 0.2,
+                top_p=0.7,
+                max_tokens=max_tokens,
+                stream=False,
+            )
+            return completion.choices[0].message.content.strip()
+        except Exception as e:
+            logger.error(f"NVIDIA NIM error: {e}")
+            # Fall through to Groq fallback
+
+    # ── Fallback: Groq round-robin ────────────────────────────────────────
+    import requests as req
     keys = _get_groq_keys()
     if not keys:
-        return "LLM not configured — add GROQ_API_KEY_1 to config.env."
+        return "LLM not configured — add NVIDIA_API_KEY or GROQ_API_KEY_1 to config.env."
 
-    # Fast model for SQL generation, quality model for answers
     model_sql    = "llama-3.1-8b-instant"
     model_answer = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
     model        = model_sql if is_sql else model_answer
 
-    with _chat_key_lock:
-        start = _chat_key_index
-        _chat_key_index = (_chat_key_index + 1) % len(keys)
-
-    # Try all keys starting from current rotation
-    for i in range(len(keys)):
-        idx     = (start + i) % len(keys)
-        api_key = keys[idx]
+    for idx, api_key in enumerate(keys):
         try:
             resp = req.post(
                 "https://api.groq.com/openai/v1/chat/completions",
@@ -1504,22 +1525,19 @@ def _call_llm_raw(prompt: str, max_tokens: int = 600, is_sql: bool = False) -> s
                 timeout=30,
             )
             if resp.status_code == 429:
-                logger.warning(f"Chat: key {idx+1} rate-limited, rotating")
+                logger.warning(f"Groq fallback: key {idx+1} rate-limited, rotating")
                 time.sleep(0.5)
                 continue
             resp.raise_for_status()
-            with _chat_key_lock:
-                _chat_key_index = (idx + 1) % len(keys)
             return resp.json()["choices"][0]["message"]["content"].strip()
         except Exception as e:
             if "429" in str(e):
-                logger.warning(f"Chat: key {idx+1} rate-limited, rotating")
                 time.sleep(0.5)
                 continue
-            logger.error(f"Chat LLM error (key {idx+1}): {e}")
+            logger.error(f"Groq fallback error (key {idx+1}): {e}")
             return f"Error calling LLM: {str(e)}"
 
-    return "All API keys are currently rate-limited. Please wait a moment and try again."
+    return "All LLM providers are currently unavailable. Please try again shortly."
 
 
 def _call_llm_for_chat(question: str, context: str) -> str:
