@@ -353,14 +353,15 @@ def _analyse_aht(agents: list, skill_name: str) -> list:
     if not acd_agents:
         return []
 
+    # Per-skill target takes priority; global is only used as fallback when 0
+    target_sec = _get_aht_sec(skill_name)
     a4_cfg     = _get_a4_config()[0]
-    # Use global AHT target from config, fallback to per-skill or default
     aht_global = a4_cfg.get("aht_target_min", 0)
-    if aht_global > 0:
+    if target_sec <= 0 and aht_global > 0:
         target_sec = aht_global * 60
-    else:
-        target_sec = _get_aht_sec(skill_name)
-    breach_sec = int(target_sec * 1.10)  # 110% of target
+    if target_sec <= 0:
+        target_sec = 24 * 60
+    breach_sec = int(target_sec * 1.10)  # alert at 110% of target
 
     high = []
     for a in acd_agents:
@@ -369,11 +370,17 @@ def _analyse_aht(agents: list, skill_name: str) -> list:
             high.append((a.get('name', ''), _seconds_to_str(call_sec), call_sec))
 
     if high:
-        names = ", ".join(f"{n} ({t})" for n, t, _ in high)
+        # Sort by longest call first, show top 3 + overflow count
+        high.sort(key=lambda x: x[2], reverse=True)
+        shown   = high[:3]
+        extra   = len(high) - 3
+        names   = ", ".join(f"{n} ({t})" for n, t, _ in shown)
+        if extra > 0:
+            names += f" +{extra} more"
         alerts.append({"skill": skill_name, "type": "AHT",
             "message": (
-                f"{len(high)} agent(s) exceeding AHT target "
-                f"({_seconds_to_str(target_sec)}, threshold {_seconds_to_str(breach_sec)}): {names}"
+                f"{len(high)} agent(s) > AHT "
+                f"(target {_seconds_to_str(target_sec)}): {names}"
             )})
     return alerts
 

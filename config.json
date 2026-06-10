@@ -94,7 +94,7 @@
   },
   "agent4": {
     "scrape_interval_sec": 60,
-    "aht_target_min": 24,
+    "aht_target_min": 0,
     "acw_target_min": 5,
     "aux_thresholds": {
       "AUX1": {
