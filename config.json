@@ -148,302 +148,362 @@
     "TS_CSTCE": {
       "aht_target_min": 24,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 3
     },
     "TS_CSTElite": {
       "aht_target_min": 22,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 2
     },
     "TS_LicKeys": {
       "aht_target_min": 26,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_VICHW": {
       "aht_target_min": 20,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_CSTVCE": {
       "aht_target_min": 24,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 2
     },
     "TS_CSTCritAcct": {
       "aht_target_min": 28,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 2
     },
     "TS_CN_ProDB": {
       "aht_target_min": 24,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 3
     },
     "TS_CN_ProCNX": {
       "aht_target_min": 24,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 3
     },
     "TS_CN_Elite": {
       "aht_target_min": 22,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 2
     },
     "TS_CN_LicKeys": {
       "aht_target_min": 26,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_CN_VICHW": {
       "aht_target_min": 20,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_CN_CritAcct": {
       "aht_target_min": 28,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 2
     },
     "TS_AU_ProDB": {
       "aht_target_min": 24,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 3
     },
     "TS_AU_ProCNX": {
       "aht_target_min": 24,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 3
     },
     "TS_AU_Elite": {
       "aht_target_min": 22,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 2
     },
     "TS_AU_LicKeys": {
       "aht_target_min": 26,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_AU_VICHW": {
       "aht_target_min": 20,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_AU_CritAcct": {
       "aht_target_min": 28,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 2
     },
     "TS_MLSCST_GER": {
       "aht_target_min": 22,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_MLSCST_SPA": {
       "aht_target_min": 22,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_MLSCST_FRA": {
       "aht_target_min": 22,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_MLSCST_ITA": {
       "aht_target_min": 22,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_MLSCST_NLD": {
       "aht_target_min": 22,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_MLSCST_POL": {
       "aht_target_min": 22,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_HK_ProDB": {
       "aht_target_min": 24,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 3
     },
     "TS_HK_ProCNX": {
       "aht_target_min": 24,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 3
     },
     "TS_HK_Elite": {
       "aht_target_min": 22,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 2
     },
     "TS_HK_LicKeys": {
       "aht_target_min": 26,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_HK_VICHW": {
       "aht_target_min": 20,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_HK_CritAcct": {
       "aht_target_min": 28,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 2
     },
     "TS_MY_ProDB": {
       "aht_target_min": 24,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 3
     },
     "TS_MY_ProCNX": {
       "aht_target_min": 24,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 3
     },
     "TS_MY_Elite": {
       "aht_target_min": 22,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 2
     },
     "TS_MY_LicKeys": {
       "aht_target_min": 26,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_MY_VICHW": {
       "aht_target_min": 20,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_MY_CritAcct": {
       "aht_target_min": 28,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 2
     },
     "TS_KR_ProDB": {
       "aht_target_min": 24,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 3
     },
     "TS_KR_ProCNX": {
       "aht_target_min": 24,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 3
     },
     "TS_KR_Elite": {
       "aht_target_min": 22,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 2
     },
     "TS_KR_LicKeys": {
       "aht_target_min": 26,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_KR_VICHW": {
       "aht_target_min": 20,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_KR_CritAcct": {
       "aht_target_min": 28,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 2
     },
     "TS_TH_ProDB": {
       "aht_target_min": 24,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 3
     },
     "TS_TH_ProCNX": {
       "aht_target_min": 24,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 3
     },
     "TS_TH_Elite": {
       "aht_target_min": 22,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 2
     },
     "TS_TH_LicKeys": {
       "aht_target_min": 26,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_TH_VICHW": {
       "aht_target_min": 20,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_TH_CritAcct": {
       "aht_target_min": 28,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 2
     },
     "TS_BR_ProDB": {
       "aht_target_min": 24,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 3
     },
     "TS_BR_ProCNX": {
       "aht_target_min": 24,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 3
     },
     "TS_BR_Elite": {
       "aht_target_min": 22,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 2
     },
     "TS_BR_LicKeys": {
       "aht_target_min": 26,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_BR_VICHW": {
       "aht_target_min": 20,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_BR_CritAcct": {
       "aht_target_min": 28,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 2
     },
     "TS_TW_ProDB": {
       "aht_target_min": 24,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 3
     },
     "TS_TW_ProCNX": {
       "aht_target_min": 24,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 3
     },
     "TS_TW_Elite": {
       "aht_target_min": 22,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 2
     },
     "TS_TW_LicKeys": {
       "aht_target_min": 26,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_TW_VICHW": {
       "aht_target_min": 20,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 1
     },
     "TS_TW_CritAcct": {
       "aht_target_min": 28,
       "ocw_threshold_sec": 60,
-      "active": true
+      "active": true,
+      "aux_threshold": 2
     }
   }
 }

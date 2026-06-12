@@ -91,7 +91,10 @@ class DashboardCollector:
         """
         if self._page is None:
             self.initialize()
-            self._page.goto(self.dashboard_url, wait_until="networkidle", timeout=30000)
+            # These are local HTML files — "load" fires as soon as the DOM + assets
+            # are ready. "networkidle" waited an extra ~500ms+ for the 5s refresh
+            # timers to go quiet, which they never fully do. "load" is much faster.
+            self._page.goto(self.dashboard_url, wait_until="load", timeout=30000)
             self._do_login()
 
         if not self._logged_in:

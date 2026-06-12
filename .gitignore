@@ -6,8 +6,8 @@ __pycache__/
 *.pyc
 *.egg
 *.egg-info/
-dist/
-build/
+/dist/
+/build/
 .eggs/
 .Python
 
@@ -26,19 +26,27 @@ config.env
 # ── Runtime / generated data ──────────────────────────────────────
 live_state.json
 history.db
+cms_agents.json
 *.db
 *.sqlite
 *.sqlite3
+*.log
 rta_v3.log
 rta_startup.log
 log/
-alerts/
+# NOTE: alerts/ holds SOURCE code (teams.py, email.py) the app imports —
+# do NOT ignore the whole folder. Only its __pycache__ is ignored (above).
+
+# Keep the db/ directory in the repo even though its contents are ignored
+!db/.gitkeep
 
 # ── Excel / Office files ──────────────────────────────────────────
 *.xlsx
 *.xls
 *.xlsm
 *.csv
+# Word/Excel temporary lock files
+~$*
 
 # ── Root-level legacy HTML copies (not used — ui/ is the live path) ──
 CMS.html
@@ -53,6 +61,8 @@ frontend/.env
 frontend/.env.local
 frontend/.env.*.local
 frontend/dist/
+node_modules/
+scripts/node_modules/
 
 # ── OS files ──────────────────────────────────────────────────────
 .DS_Store

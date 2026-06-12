@@ -51,14 +51,15 @@ def _get_thresholds():
         )
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-        a2 = mod.get_agent2()   # OCW + queue_min now in agent2
+        a2 = mod.get_agent2()
         a3 = mod.get_agent3()
         return {
-            "ocw_threshold_sec":   a2.get("ocw_threshold_sec",   60),
+            "ocw_threshold_sec":   a2.get("ocw_threshold_sec",   60),  # global fallback
             "queue_min":            a2.get("queue_min",            1),
             "amber_threshold":      a3.get("amber_threshold",      90.0),
             "red_threshold":        a3.get("red_threshold",        80.0),
             "black_threshold":      a3.get("black_threshold",      70.0),
+            "_mod":                 mod,   # pass loader so per-skill OCW can be called below
         }
     except Exception as e:
         logger.warning(f"config_loader not available — using defaults: {e}")
@@ -153,9 +154,10 @@ def router_node(state: dict) -> dict:
     a2_alerted   = state.get('a2_last_alerted', {})
 
     # Load thresholds from config.json
-    thresholds  = _get_thresholds()
-    _OCW        = thresholds["ocw_threshold_sec"]
-    _QUEUE_MIN  = thresholds["queue_min"]
+    thresholds    = _get_thresholds()
+    _OCW_GLOBAL   = thresholds["ocw_threshold_sec"]   # global fallback
+    _cfg_mod      = thresholds.get("_mod")            # config_loader module for per-skill lookup
+    _QUEUE_MIN    = thresholds["queue_min"]
     _SLA_AMBER  = thresholds["amber_threshold"]
     _SLA_RED    = thresholds["red_threshold"]
     _SLA_BLACK  = thresholds["black_threshold"]
@@ -183,12 +185,13 @@ def router_node(state: dict) -> dict:
             critical_skills.append(skill)
             reasons.append(f"{skill}: queue={queue} avail=0")
 
-        # ── A2 trigger: OCW breach ────────────────────────────────────────────
-        if ocw > _OCW and queue > 0:
+        # ── A2 trigger: OCW breach — per-skill override, fallback to global ─────
+        _ocw_limit = _cfg_mod.get_ocw_threshold(skill) if _cfg_mod else _OCW_GLOBAL
+        if ocw > _ocw_limit and queue > 0:
             invoke_a2 = True
             if skill not in ocw_skills:
                 ocw_skills.append(skill)
-            reasons.append(f"{skill}: OCW={m.ocw} > 60s")
+            reasons.append(f"{skill}: OCW={m.ocw} > {_ocw_limit}s")
 
         # ── LLM flag: only if AUX agents exist to move ───────────────────────
         if invoke_a2 and aux > 0:
@@ -289,32 +292,24 @@ def route_after_router(state: dict) -> Literal["a2_only", "a3_only", "both", "en
 
 def build_workflow(tag: str, scrape_only: bool = False):
     """
-    Build and compile LangGraph workflow for a region.
+    Build and compile the ANALYSIS LangGraph workflow for a region.
+
+    IMPORTANT: Agent 1 (scrape + breach detection) is NO LONGER part of this graph.
+    It runs directly in run_all.py's poll loop FIRST, so live_state.json (which the
+    dashboard and chatbot read) gets fresh SLA numbers immediately — before the slow
+    LLM-based analysis (A2/A3) runs. This prevents a breached region's long LLM calls
+    from freezing its dashboard/chatbot data for minutes.
+
     tag         = region name lowercase — 'rta', 'cn', 'au', 'emea'
-    scrape_only = True  → Agent1 only (no analysis, no levers, no alerts)
-                  False → Full pipeline (Agent1 → Router → Agent2/3)
+    scrape_only = True  → no analysis at all → returns None (loop only scrapes)
+                  False → analysis graph: Router → Agent2/3
     """
-    agent1 = _load(f"rta_agent1_{tag}", "agents/agent1_collector.py")
-
-    def agent1_node(state: dict) -> dict:
-        try:
-            return agent1.agent1_collector(state)
-        except Exception as e:
-            logger.error(f"[{tag.upper()}] Agent 1 error: {e}")
-            state['error_count'] = state.get('error_count', 0) + 1
-            return state
-
     if scrape_only:
-        # Minimal graph — Agent1 only, straight to END
-        workflow = StateGraph(dict)
-        workflow.add_node("agent1", agent1_node)
-        workflow.set_entry_point("agent1")
-        workflow.add_edge("agent1", END)
-        app = workflow.compile()
-        logger.info(f"[{tag.upper()}] LangGraph workflow compiled (SCRAPE ONLY).")
-        return app
+        # No analysis in scrape-only mode — the poll loop just scrapes via Agent 1.
+        logger.info(f"[{tag.upper()}] Scrape-only mode — no analysis graph built.")
+        return None
 
-    # Full pipeline
+    # Analysis pipeline (Agent 1 already ran in the poll loop and populated state)
     agent2 = _load(f"rta_agent2_{tag}", "agents/agent2_analyst.py")
     agent3 = _load(f"rta_agent3_{tag}", "agents/agent3_lever.py")
 
@@ -336,13 +331,11 @@ def build_workflow(tag: str, scrape_only: bool = False):
             return state
 
     workflow = StateGraph(dict)
-    workflow.add_node("agent1", agent1_node)
     workflow.add_node("router", router_node)
     workflow.add_node("agent2", agent2_node)
     workflow.add_node("agent3", agent3_node)
 
-    workflow.set_entry_point("agent1")
-    workflow.add_edge("agent1", "router")
+    workflow.set_entry_point("router")
     workflow.add_conditional_edges(
         "router",
         route_after_router,
@@ -356,5 +349,5 @@ def build_workflow(tag: str, scrape_only: bool = False):
     workflow.add_edge("agent3", END)
 
     app = workflow.compile()
-    logger.info(f"[{tag.upper()}] LangGraph workflow compiled (FULL).")
+    logger.info(f"[{tag.upper()}] LangGraph workflow compiled (ANALYSIS: Router → A2/A3).")
     return app

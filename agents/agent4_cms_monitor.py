@@ -15,9 +15,12 @@ Run from run_all.py in a separate thread:
 """
 
 import importlib.util
+import json
 import logging
 import os
+import re as _re
 import sys
+import threading
 import time
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -25,6 +28,16 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 logger = logging.getLogger(__name__)
+
+# ── Shared lock for cms_agents.json — one lock across all 10 region copies ────
+# (agent4 is loaded as rta_agent4_<tag> — each copy has its own module namespace,
+#  so a plain threading.Lock() would NOT be shared between regions)
+_CMS_LOCK_KEY = "__rta_cms_agents_lock__"
+if _CMS_LOCK_KEY not in sys.modules:
+    sys.modules[_CMS_LOCK_KEY] = threading.Lock()
+_CMS_STATE_LOCK = sys.modules[_CMS_LOCK_KEY]
+
+_CMS_STATE_PATH = os.path.join(_ROOT, "db", "cms_agents.json")
 
 # ── Thresholds — loaded from config.json via config_loader ──────────────────
 POLL_INTERVAL_SEC = 60   # default — overridden by config.json
@@ -140,11 +153,6 @@ AHT_TARGETS = {
 
 AHT_BREACH_THRESHOLD = 1.10   # alert if AHT > target × 110%
 
-# AUX thresholds
-MAX_AGENTS_ON_EXTENDED_BREAK = 2   # alert if > 2 agents on break > 15 min
-MAX_AGENTS_ON_EXTENDED_LUNCH = 1   # alert if > 1 agent on lunch > 30 min
-MAX_CASE_MGMT_AGENTS         = 3   # alert if > 3 agents on Aux6
-
 # Skills to monitor per region tag
 SKILLS_BY_REGION = {
     "rta": [
@@ -230,10 +238,24 @@ def _send_teams_alert(webhook, region, alerts):
     ]
 
     for alert in alerts:
-        skill   = alert.get('skill', '')
-        a_type  = alert.get('type', '')
-        message = alert.get('message', '')
-        icon    = {"AHT":"⏱️","AUX_BREAK":"☕","AUX_LUNCH":"🍽️","AUX_CASE_MGMT":"📁"}.get(a_type,"⚠️")
+        skill    = alert.get('skill', '')
+        a_type   = alert.get('type', '')
+        message  = alert.get('message', '')
+        aux_name = alert.get('aux_name', '').lower()
+        if a_type == 'AHT':
+            icon = '⏱️'
+        elif a_type == 'ACW':
+            icon = '📝'
+        elif a_type == 'AUX':
+            if 'break' in aux_name:      icon = '☕'
+            elif 'lunch' in aux_name:    icon = '🍽️'
+            elif 'case' in aux_name:     icon = '📁'
+            elif 'meeting' in aux_name:  icon = '📅'
+            elif 'training' in aux_name: icon = '📚'
+            elif 'outbound' in aux_name: icon = '📞'
+            else:                        icon = '🔶'
+        else:
+            icon = '⚠️'
         body.append({
             "type":    "TextBlock",
             "text":    f"{icon} **{skill}** — {message}",
@@ -289,11 +311,29 @@ def _analyse_aux(agents: list, skill_name: str) -> list:
     """
     Check AUX patterns using config-driven thresholds.
     Each AUX code has its own max_time_min and enabled flag from config.
+
+    Per-skill AUX count gate (aux_threshold in skill_thresholds):
+      If total agents currently on AUX  <=  skill's aux_threshold, the skill
+      has enough staffing headroom — suppress all AUX time alerts for this
+      poll cycle (healthy skills like ProDB don't need AUX micromanagement).
+      When count exceeds threshold, normal time-based checks fire.
     """
     alerts     = []
     aux_agents = [a for a in agents if a.get('state') == 'AUX']
     if not aux_agents:
         return []
+
+    # ── Per-skill AUX count gate ──────────────────────────────────────────────
+    # Loads aux_threshold from config.json → skill_thresholds[skill_name]
+    # Falls back to name-pattern defaults in config_loader.get_aux_max().
+    _, config_mod = _get_a4_config()
+    if config_mod:
+        try:
+            skill_aux_max = config_mod.get_aux_max(skill_name)
+            if len(aux_agents) <= skill_aux_max:
+                return []   # within allowed limit — no alerts needed
+        except Exception:
+            pass            # config_mod missing get_aux_max — fall through
 
     # Load aux thresholds from config
     a4_cfg         = _get_a4_config()[0]
@@ -334,15 +374,50 @@ def _analyse_aux(agents: list, skill_name: str) -> list:
         if exceeded:
             names = ", ".join(f"{n} ({m:.0f}min)" for n, m in exceeded)
             alerts.append({
-                "skill":   skill_name,
-                "type":    f"AUX_{aux_key}",
-                "message": (
+                "skill":    skill_name,
+                "type":     "AUX",
+                "aux_key":  aux_key,   # e.g. "AUX2"
+                "aux_name": aux_name,  # e.g. "Break"
+                "message":  (
                     f"{len(exceeded)} agent(s) on {aux_name} exceeded "
                     f"{max_time}min limit: {names}"
                 )
             })
 
     return alerts
+
+
+# ── ACW analysis ──────────────────────────────────────────────────────────────
+
+def _analyse_acw(agents: list, skill_name: str) -> list:
+    """
+    Alert when agents stay in After-Call-Work (ACW) longer than acw_target_min.
+    acw_target_min=0 disables the check.
+    """
+    a4_cfg      = _get_a4_config()[0]
+    target_min  = a4_cfg.get("acw_target_min", 0)
+    if target_min <= 0:
+        return []   # disabled
+
+    acw_agents = [a for a in agents if a.get('state', '').upper() == 'ACW']
+    if not acw_agents:
+        return []
+
+    exceeded = [
+        (a.get('name', ''), a.get('time_minutes', 0))
+        for a in acw_agents
+        if a.get('time_minutes', 0) > target_min
+    ]
+    if not exceeded:
+        return []
+
+    exceeded.sort(key=lambda x: x[1], reverse=True)
+    names = ", ".join(f"{n} ({m:.0f}min)" for n, m in exceeded)
+    return [{
+        "skill":   skill_name,
+        "type":    "ACW",
+        "message": f"{len(exceeded)} agent(s) in ACW > {target_min}min: {names}"
+    }]
 
 
 # ── AHT analysis ──────────────────────────────────────────────────────────────
@@ -385,29 +460,107 @@ def _analyse_aht(agents: list, skill_name: str) -> list:
     return alerts
 
 
+# ── Chatbot snapshot helpers ──────────────────────────────────────────────────
+
+def _resolve_aux_name(raw_reason: str, aux_thresholds: dict) -> tuple:
+    """
+    Given raw AUX reason from CMS (e.g. "AUX 2"), return (aux_key, friendly_name).
+    Falls back to raw_reason if no mapping found.
+    """
+    m = _re.search(r'AUX\s*(\d+)', raw_reason, _re.IGNORECASE)
+    if m:
+        aux_key  = f"AUX{m.group(1)}"
+        cfg_name = aux_thresholds.get(aux_key, {}).get("name", "")
+        return aux_key, cfg_name or raw_reason
+    return "", raw_reason or "—"
+
+
+def _save_agents_snapshot(region_tag: str, agents_by_skill: dict):
+    """
+    Write per-region per-skill agent list to db/cms_agents.json.
+    Called after every Agent 4 poll — chatbot reads this file.
+    Thread-safe: shared lock across all region copies via sys.modules.
+    """
+    try:
+        with _CMS_STATE_LOCK:
+            # Read current file (other regions may have written)
+            existing = {}
+            try:
+                with open(_CMS_STATE_PATH, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+            except Exception:
+                pass
+
+            existing[region_tag] = agents_by_skill
+
+            tmp = _CMS_STATE_PATH + ".tmp"
+            try:
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(existing, f, indent=2, default=str)
+                os.replace(tmp, _CMS_STATE_PATH)
+            except OSError:
+                # OneDrive lock fallback
+                with open(_CMS_STATE_PATH, "w", encoding="utf-8") as f:
+                    json.dump(existing, f, indent=2, default=str)
+    except Exception as e:
+        logger.warning(f"A4: cms_agents.json write failed: {e}")
+
+
 # ── Main monitor function ─────────────────────────────────────────────────────
 
-def agent4_monitor(webhook: str, region_name: str, cms_collector, skills: list) -> list:
+def agent4_monitor(webhook: str, region_name: str, cms_collector, skills: list,
+                   region_tag: str = "") -> list:
     """
     Single Agent 4 check — scrape CMS for region's skills and check thresholds.
     Returns list of all alerts found.
     """
     logger.info(f"=== Agent 4 — CMS Monitor [{region_name}] ===")
-    all_alerts = []
+    all_alerts      = []
+    agents_snapshot = {}   # {skill_name: [agent_dicts]} — written to cms_agents.json
+
+    a4_cfg, _ = _get_a4_config()
+    aux_thresholds = a4_cfg.get("aux_thresholds", {})
 
     for skill_name in skills:
         try:
+            # Respect per-skill active toggle from Skill Thresholds UI
+            skill_cfg = _get_a4_config()[1]
+            if skill_cfg:
+                sk = skill_cfg.get_skill(skill_name)
+                if not sk.get("active", True):
+                    logger.info(f"A4 [{region_name}]: {skill_name} — inactive (skipped)")
+                    continue
+
             agents = cms_collector.collect(skill_name)
             if not agents:
                 logger.info(f"A4 [{region_name}]: No agents for {skill_name} — skipping")
                 continue
 
+            # ── Build chatbot snapshot for this skill ─────────────────────────
+            skill_agents = []
+            for a in agents:
+                raw_reason = a.get("aux_reason", "")
+                aux_key, aux_name = _resolve_aux_name(raw_reason, aux_thresholds)
+                skill_agents.append({
+                    "name":         a.get("name", ""),
+                    "state":        a.get("state", ""),
+                    "aux_reason":   raw_reason,
+                    "aux_key":      aux_key,           # e.g. "AUX2"
+                    "aux_name":     aux_name,          # e.g. "Break"
+                    "time_minutes": a.get("time_minutes", 0),
+                    "skill":        skill_name,
+                })
+            agents_snapshot[skill_name] = skill_agents
+
+            # ── Alert analysis ─────────────────────────────────────────────────
             aux_alerts = _analyse_aux(agents, skill_name)
+            acw_alerts = _analyse_acw(agents, skill_name)
             aht_alerts = _analyse_aht(agents, skill_name)
             all_alerts.extend(aux_alerts)
+            all_alerts.extend(acw_alerts)
             all_alerts.extend(aht_alerts)
 
-            if aux_alerts or aht_alerts:
+            if aux_alerts or acw_alerts or aht_alerts:
                 logger.info(
                     f"A4 [{region_name}]: {skill_name} — "
                     f"{len(aux_alerts)} AUX, {len(aht_alerts)} AHT alerts"
@@ -417,6 +570,10 @@ def agent4_monitor(webhook: str, region_name: str, cms_collector, skills: list) 
 
         except Exception as e:
             logger.error(f"A4 [{region_name}]: Error checking {skill_name}: {e}")
+
+    # ── Persist agent snapshot for chatbot ────────────────────────────────────
+    tag = region_tag or region_name.lower()
+    _save_agents_snapshot(tag, agents_snapshot)
 
     if all_alerts:
         _send_teams_alert(webhook, region_name, all_alerts)
@@ -472,7 +629,7 @@ def agent4_monitor_loop(webhook: str, region_name: str, dashboard_path: str,
 
     while True:
         try:
-            agent4_monitor(webhook, region_name, cms_collector, skills)
+            agent4_monitor(webhook, region_name, cms_collector, skills, region_tag=tag)
         except Exception as e:
             logger.error(f"A4 [{region_name}]: Monitor error: {e}")
 

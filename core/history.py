@@ -271,7 +271,7 @@ TABLE: skill_history
   Columns:
     id             INTEGER  — auto-increment primary key
     timestamp      TEXT     — format 'YYYY-MM-DD HH:MM:SS', e.g. '2026-06-08 15:42:05'
-    region_tag     TEXT     — short region code: 'rta' (India), 'cn' (China), 'au' (Australia), 'emea' (Europe)
+    region_tag     TEXT     — short region code (see ALL valid values in the mapping below)
     region_display TEXT     — full region name, e.g. 'Client ProSupport IND'
     skill          TEXT     — skill queue name, e.g. 'TS_CSTCE', 'TS_CN_ProDB', 'TS_AU_Elite'
     sla            REAL     — service level percentage, e.g. 85.2 (means 85.2%)
@@ -290,11 +290,17 @@ TABLE: skill_history
     a2_note        TEXT     — AI analyst note (≤15 words), e.g. 'High AUX occupancy with active queue'
     root_cause     TEXT     — root cause code: 'AUX_HEAVY', 'STAFFING', 'VOLUME', 'OCW_BREACH', 'RECOVERING', 'STABLE'
 
-  Skill name patterns:
-    India (rta)  : TS_CSTCE, TS_CSTElite, TS_LicKeys, TS_VICHW, TS_CSTVCE, TS_CSTCritAcct
-    China (cn)   : TS_CN_ProDB, TS_CN_ProCNX, TS_CN_Elite, TS_CN_LicKeys, TS_CN_VICHW, TS_CN_CritAcct
-    Australia(au): TS_AU_ProDB, TS_AU_ProCNX, TS_AU_Elite, TS_AU_LicKeys, TS_AU_VICHW, TS_AU_CritAcct
-    EMEA         : TS_MLSCST_GER, TS_MLSCST_SPA, TS_MLSCST_FRA, TS_MLSCST_ITA, TS_MLSCST_NLD, TS_MLSCST_POL
+  ALL valid region_tag values and their skill name prefixes:
+    'rta'  India / IND        : TS_CSTCE, TS_CSTElite, TS_LicKeys, TS_VICHW, TS_CSTVCE, TS_CSTCritAcct
+    'cn'   China / CHN        : TS_CN_ProDB, TS_CN_ProCNX, TS_CN_Elite, TS_CN_LicKeys, TS_CN_VICHW, TS_CN_CritAcct
+    'au'   Australia / AUS    : TS_AU_ProDB, TS_AU_ProCNX, TS_AU_Elite, TS_AU_LicKeys, TS_AU_VICHW, TS_AU_CritAcct
+    'emea' EMEA / Europe      : TS_MLSCST_GER, TS_MLSCST_SPA, TS_MLSCST_FRA, TS_MLSCST_ITA, TS_MLSCST_NLD, TS_MLSCST_POL
+    'hk'   Hong Kong / HKG    : TS_HK_ProDB, TS_HK_ProCNX, TS_HK_Elite, TS_HK_LicKeys, TS_HK_VICHW, TS_HK_CritAcct
+    'my'   Malaysia / MYS     : TS_MY_ProDB, TS_MY_ProCNX, TS_MY_Elite, TS_MY_LicKeys, TS_MY_VICHW, TS_MY_CritAcct
+    'kr'   Korea / KOR        : TS_KR_ProDB, TS_KR_ProCNX, TS_KR_Elite, TS_KR_LicKeys, TS_KR_VICHW, TS_KR_CritAcct
+    'th'   Thailand / THA     : TS_TH_ProDB, TS_TH_ProCNX, TS_TH_Elite, TS_TH_LicKeys, TS_TH_VICHW, TS_TH_CritAcct
+    'br'   Brazil / BRA       : TS_BR_ProDB, TS_BR_ProCNX, TS_BR_Elite, TS_BR_LicKeys, TS_BR_VICHW, TS_BR_CritAcct
+    'tw'   Taiwan / TWN       : TS_TW_ProDB, TS_TW_ProCNX, TS_TW_Elite, TS_TW_LicKeys, TS_TW_VICHW, TS_TW_CritAcct
 
 TABLE: cms_history
   Purpose: One row per agent per skill per poll. Raw CMS agent state data.

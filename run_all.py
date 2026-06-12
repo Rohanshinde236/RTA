@@ -100,10 +100,14 @@ _LIVE_STATE_LOCK = threading.Lock()
 _LIVE_STATE_PATH = os.path.join(script_dir, "db", "live_state.json")
 
 
-def _update_live_state(tag: str, name: str, display: str, state: dict):
+def _update_live_state(tag: str, name: str, display: str, state: dict,
+                       save_history: bool = True):
     """
     Extract chatbot-relevant fields from agent state and write to live_state.json.
-    Called after every poll. Only keeps latest data — previous poll is overwritten.
+    Called twice per poll:
+      1. Right after scrape (save_history=True)  — fresh SLA data for dashboard/chatbot
+      2. After A2/A3 analysis (save_history=False) — layers in lever/A2 results
+    save_history is gated to the first call so each poll writes exactly ONE history row.
     Atomic write: writes to .tmp first then renames to avoid partial reads by app.py.
     """
     metrics   = state.get("skill_metrics", [])
@@ -146,14 +150,15 @@ def _update_live_state(tag: str, name: str, display: str, state: dict):
             "root_cause":   decision.get("root_cause", ""),
         }
 
-    # Save to history DB
-    try:
-        from core.history import save_skill_snapshot, cleanup_old_data
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        save_skill_snapshot(tag, display, skills_data, ts)
-        cleanup_old_data()  # remove data older than 7 days
-    except Exception as e:
-        logger.warning(f"History DB write failed: {e}")
+    # Save to history DB — only on the post-scrape call so each poll = one row
+    if save_history:
+        try:
+            from core.history import save_skill_snapshot, cleanup_old_data
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            save_skill_snapshot(tag, display, skills_data, ts)
+            cleanup_old_data()  # remove data older than 7 days
+        except Exception as e:
+            logger.warning(f"History DB write failed: {e}")
 
     region_data = {
         "region_name":    name,
@@ -169,15 +174,28 @@ def _update_live_state(tag: str, name: str, display: str, state: dict):
 
     with _LIVE_STATE_LOCK:
         LIVE_STATE[tag] = region_data
-        # Atomic write — write to .tmp then rename so app.py never reads partial file
-        tmp_path  = _LIVE_STATE_PATH + ".tmp"
-        try:
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                import json as _j
-                _j.dump(LIVE_STATE, f, indent=2, default=str)
-            os.replace(tmp_path, _LIVE_STATE_PATH)
-        except Exception as e:
-            logger.warning(f"live_state.json write failed: {e}")
+        import json as _j
+        payload = _j.dumps(LIVE_STATE, indent=2, default=str)
+        # Try atomic write (tmp → rename). OneDrive can lock .tmp files briefly,
+        # so retry up to 3 times then fall back to direct write.
+        tmp_path = _LIVE_STATE_PATH + ".tmp"
+        written  = False
+        for attempt in range(3):
+            try:
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    f.write(payload)
+                os.replace(tmp_path, _LIVE_STATE_PATH)
+                written = True
+                break
+            except OSError:
+                time.sleep(0.1)
+        if not written:
+            # OneDrive still holding the lock — write directly (slightly less atomic but always works)
+            try:
+                with open(_LIVE_STATE_PATH, "w", encoding="utf-8") as f:
+                    f.write(payload)
+            except Exception as e:
+                logger.warning(f"live_state.json write failed: {e}")
 
 
 def _load(name, rel):
@@ -214,7 +232,11 @@ def region_loop(region: dict, region_index: int = 0):
     # Load state module
     _state_mod = _load(f"rta_core_state_{tag}", "core/state.py")
 
-    # Build LangGraph workflow for this region
+    # Load Agent 1 directly — it runs in the poll loop BEFORE the analysis graph,
+    # so live_state.json gets fresh SLA data immediately (decoupled from slow LLM work).
+    agent1_mod = _load(f"rta_agent1_{tag}", "agents/agent1_collector.py")
+
+    # Build the ANALYSIS LangGraph workflow (Router → A2/A3). None in scrape-only mode.
     from workflow import build_workflow
     app = build_workflow(tag, scrape_only=scrape_only)
 
@@ -251,20 +273,41 @@ def region_loop(region: dict, region_index: int = 0):
             poll_start = time.time()
             logger.info(f"[{name}] Poll #{state['poll_number']}")
 
+            # ── Phase 1: scrape + breach detection (fast, NO LLM) ─────────────
             try:
-                state = app.invoke(state)
+                state = agent1_mod.agent1_collector(state)
             except Exception as e:
-                logger.error(f"[{name}] Workflow error: {e}")
+                if "LOGIN FAILED" in str(e):
+                    logger.error(f"[{name}] {e}")
+                else:
+                    logger.error(f"[{name}] Agent 1 error: {e}")
                 state['error_count'] = state.get('error_count', 0) + 1
+
+            # Write fresh dashboard/chatbot data IMMEDIATELY — before slow analysis.
+            # This is what keeps every region live on the dashboard even while a
+            # breached region runs long LLM calls below.
+            scrape_time = time.time() - poll_start
+            try:
+                _update_live_state(tag, name, display, state, save_history=True)
+            except Exception as e:
+                logger.warning(f"[{name}] live_state update (scrape) failed: {e}")
+
+            # ── Phase 2: analysis (Router → A2/A3) — full mode only, may be slow ──
+            if not scrape_only and app is not None:
+                try:
+                    state = app.invoke(state)
+                except Exception as e:
+                    logger.error(f"[{name}] Workflow error: {e}")
+                    state['error_count'] = state.get('error_count', 0) + 1
+
+                # Layer lever/A2 results into live_state (no extra history row)
+                try:
+                    _update_live_state(tag, name, display, state, save_history=False)
+                except Exception as e:
+                    logger.warning(f"[{name}] live_state update (analysis) failed: {e}")
 
             state['poll_number'] += 1
             poll_time  = time.time() - poll_start
-
-            # Update live state for chatbot — after every poll
-            try:
-                _update_live_state(tag, name, display, state)
-            except Exception as e:
-                logger.warning(f"[{name}] live_state update failed: {e}")
 
             # Read scrape interval from config each poll
             try:
@@ -277,7 +320,7 @@ def region_loop(region: dict, region_index: int = 0):
             sleep_time = max(0, poll_interval - poll_time)
 
             logger.info(
-                f"[{name}] Poll done in {poll_time:.1f}s | "
+                f"[{name}] Poll done in {poll_time:.1f}s (scrape {scrape_time:.1f}s) | "
                 f"Skills: {len(state.get('skill_metrics', []))} | "
                 f"Breached: {list(state.get('breached_skills', {}).keys())} | "
                 f"Route: A2={state.get('_invoke_a2', False)} "
@@ -318,7 +361,10 @@ def main():
         threads.append(t)
         t.start()
         logger.info(f"Started thread for {region['name']}")
-        time.sleep(15)  # stagger browser starts — 15s between regions
+        # Stagger browser launches just enough to avoid a CPU spike from 10
+        # simultaneous Chromium starts. 3s × 10 regions = whole board live in ~30s
+        # (was 15s → last region didn't even start for 135s).
+        time.sleep(3)
 
     logger.info("All regions running! Press Ctrl+C to stop.")
     try:

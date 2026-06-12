@@ -1,0 +1,480 @@
+# ============================================================
+# RTA SYSTEM RULES — MASTER RULEBOOK
+# ============================================================
+# This file is the SINGLE SOURCE OF TRUTH for all business,
+# operational, and chatbot rules across the entire system.
+#
+# Used by:
+#   - prompt_loader.py   → injects {rules} into every LLM prompt
+#   - workflow.py        → reads routing/lever/recovery thresholds
+#   - agent4_cms_monitor.py → reads AHT/AUX/ACW thresholds
+#   - chatbot (app.py)   → reads formatting + SQL rules
+#
+# To change any rule: edit this file only. No code changes needed.
+# ============================================================
+
+
+# ─────────────────────────────────────────────────────────────
+# SECTION 1 — REGION & SKILL REFERENCE
+# ─────────────────────────────────────────────────────────────
+regions:
+  rta:  "India (Client ProSupport IND)"
+  cn:   "China (Client ProSupport CHN)"
+  au:   "Australia (Client ProSupport AUS)"
+  emea: "EMEA (Europe — Germany, France, Spain, Italy, Netherlands, Poland)"
+  hk:   "Hong Kong (Client ProSupport HKG)"
+  my:   "Malaysia (Client ProSupport MYS)"
+  kr:   "Korea (Client ProSupport KOR)"
+  th:   "Thailand (Client ProSupport THA)"
+  br:   "Brazil (Client ProSupport BRA)"
+  tw:   "Taiwan (Client ProSupport TWN)"
+
+skills_by_region:
+  rta:  ["TS_CSTCE", "TS_CSTElite", "TS_LicKeys", "TS_VICHW", "TS_CSTVCE", "TS_CSTCritAcct"]
+  cn:   ["TS_CN_ProDB", "TS_CN_ProCNX", "TS_CN_Elite", "TS_CN_LicKeys", "TS_CN_VICHW", "TS_CN_CritAcct"]
+  au:   ["TS_AU_ProDB", "TS_AU_ProCNX", "TS_AU_Elite", "TS_AU_LicKeys", "TS_AU_VICHW", "TS_AU_CritAcct"]
+  emea: ["TS_MLSCST_GER", "TS_MLSCST_SPA", "TS_MLSCST_FRA", "TS_MLSCST_ITA", "TS_MLSCST_NLD", "TS_MLSCST_POL"]
+  hk:   ["TS_HK_ProDB", "TS_HK_ProCNX", "TS_HK_Elite", "TS_HK_LicKeys", "TS_HK_VICHW", "TS_HK_CritAcct"]
+  my:   ["TS_MY_ProDB", "TS_MY_ProCNX", "TS_MY_Elite", "TS_MY_LicKeys", "TS_MY_VICHW", "TS_MY_CritAcct"]
+  kr:   ["TS_KR_ProDB", "TS_KR_ProCNX", "TS_KR_Elite", "TS_KR_LicKeys", "TS_KR_VICHW", "TS_KR_CritAcct"]
+  th:   ["TS_TH_ProDB", "TS_TH_ProCNX", "TS_TH_Elite", "TS_TH_LicKeys", "TS_TH_VICHW", "TS_TH_CritAcct"]
+  br:   ["TS_BR_ProDB", "TS_BR_ProCNX", "TS_BR_Elite", "TS_BR_LicKeys", "TS_BR_VICHW", "TS_BR_CritAcct"]
+  tw:   ["TS_TW_ProDB", "TS_TW_ProCNX", "TS_TW_Elite", "TS_TW_LicKeys", "TS_TW_VICHW", "TS_TW_CritAcct"]
+
+
+# ─────────────────────────────────────────────────────────────
+# SECTION 2 — SLA BANDS
+# Used by: Router, Agent 3, Dashboard badge, Chatbot
+# ─────────────────────────────────────────────────────────────
+sla_bands:
+  EXCELLENT:
+    range: "95% and above"
+    color: Blue
+    meaning: "Ahead of target — no action needed"
+  HEALTHY:
+    range: "90% to 94.9%"
+    color: Green
+    meaning: "On target — monitor only"
+  WARNING:
+    range: "80% to 89.9%"
+    color: Amber
+    meaning: "Approaching breach — prepare agents"
+  CRITICAL:
+    range: "70% to 79.9%"
+    color: Red
+    meaning: "Active breach — escalate immediately"
+  SEVERE:
+    range: "Below 70%"
+    color: Black
+    meaning: "Crisis level — all levers must be fired"
+
+
+# ─────────────────────────────────────────────────────────────
+# SECTION 3 — LEVER FIRING RULES
+# Used by: workflow.py → router_node → Agent 3
+# ─────────────────────────────────────────────────────────────
+lever_rules:
+  amber_threshold: 90.0    # Fire Amber lever when SLA drops below this %
+  red_threshold:   80.0    # Fire Red lever when SLA drops below this %
+  black_threshold: 70.0    # Fire Black lever when SLA drops below this %
+
+  one_shot_rule:
+    description: >
+      Each lever (Amber, Red, Black) fires ONLY ONCE per SLA band crossing per skill.
+      Once fired, it will not fire again until the skill fully recovers.
+      Tracked per skill in state: a3_fired_levers[skill_Amber], a3_fired_levers[skill_Red], etc.
+
+  recovery_rule:
+    description: >
+      A skill is considered RECOVERED when ALL three conditions are true simultaneously:
+        1. queue = 0 (no calls waiting)
+        2. avail > 0 (at least one agent available)
+        3. SLA >= amber_threshold (90%)
+      On recovery: send a Teams RESOLVED message AND reset all fired levers for that skill
+      so they can re-fire if SLA drops again.
+
+  escalation_order:
+    description: >
+      Levers escalate progressively. If SLA drops from 85% to 65% in one poll:
+        - Amber fires (SLA < 90)
+        - Red fires (SLA < 80)
+        - Black fires (SLA < 70)
+      All three fire in the same poll cycle if not previously fired.
+
+
+# ─────────────────────────────────────────────────────────────
+# SECTION 4 — AGENT 2 ROUTING RULES (Queue / OCW Analysis)
+# Used by: workflow.py → router_node
+# ─────────────────────────────────────────────────────────────
+a2_routing_rules:
+  queue_trigger:
+    description: "Fire Agent 2 when queue >= queue_min AND avail = 0 for any skill"
+    queue_min: 1           # minimum calls in queue to trigger (from config.json)
+
+  ocw_trigger:
+    description: >
+      Fire Agent 2 when OCW (Oldest Call Waiting) exceeds threshold AND queue > 0.
+      OCW threshold is checked per-skill first (from skill_thresholds in config.json),
+      then falls back to global agent2.ocw_threshold_sec.
+    global_ocw_threshold_sec: 60   # fallback if no per-skill override
+
+  llm_flag:
+    description: >
+      Agent 2 uses LLM recommendations ONLY when AUX agents exist (someone to move).
+      If no agents are on AUX: use rule-based generic recommendation (faster, no LLM cost).
+
+  cooldown_rule:
+    description: >
+      Agent 2 will NOT alert the same skill twice within the cooldown window.
+      Cooldown is tracked per-skill in state: a2_last_alerted[skill] = timestamp.
+    cooldown_sec: 300      # 5 minutes — do not alert same skill again within this window
+
+  systemic_rule:
+    description: >
+      If 3 or more skills in the same region are simultaneously in crisis
+      (queue > 0 with avail = 0, or OCW breach), flag as SYSTEMIC CRISIS.
+      Log a warning. No separate escalation yet — included in A2 recommendation.
+    systemic_min_skills: 3
+
+
+# ─────────────────────────────────────────────────────────────
+# SECTION 5 — AGENT 4 CMS MONITORING RULES
+# Used by: agents/agent4_cms_monitor.py
+# ─────────────────────────────────────────────────────────────
+agent4_rules:
+
+  aht_rule:
+    description: >
+      Alert when an agent's current call duration exceeds their skill's AHT target by 10%.
+      Per-skill target from config.json skill_thresholds[skill].aht_target_min.
+      If per-skill target = 0, fall back to global agent4.aht_target_min.
+      If both are 0, the AHT check is DISABLED for that skill.
+    breach_multiplier: 1.10   # alert at 110% of AHT target
+    show_top_n: 3             # show top 3 longest calls in alert + overflow count
+
+  acw_rule:
+    description: >
+      Alert when an agent stays in After-Call-Work (ACW) longer than acw_target_min.
+      Setting acw_target_min = 0 disables the ACW check entirely.
+      Agents are sorted by longest ACW first in the alert.
+    acw_target_min: 5         # minutes — alert if agent in ACW longer than this
+
+  aux_count_gate:
+    description: >
+      Per-skill AUX count gate — the most important AUX suppression rule.
+      If the total number of agents currently on ANY AUX code is <= skill's aux_threshold,
+      ALL time-based AUX alerts are SUPPRESSED for that poll cycle.
+      This prevents alert fatigue for healthy large teams (e.g. ProDB with 2 on break = fine).
+      When count exceeds aux_threshold, normal time-based checks fire.
+    defaults_by_pattern:
+      ProDB:   3    # large team, healthy — allow up to 3 on AUX before alerting
+      ProCNX:  3    # large team, healthy
+      VICHW:   1    # consistently struggling — alert at 2+ on AUX
+      LicKeys: 1    # small team — alert at 2+ on AUX
+      MLSCST:  1    # small single-language EMEA teams
+      Elite:   2    # moderate tolerance
+      CritAcct: 2   # moderate tolerance
+      DEFAULT: 2    # any skill not matched above
+    override: "Set aux_threshold in config.json skill_thresholds[skill] to override any default"
+
+  aux_time_rules:
+    description: >
+      After passing the AUX count gate, check each AUX code against its configured time limit.
+      Each AUX code (AUX1–AUX9) has its own max_time_min and enabled flag in config.json.
+      If enabled=false or max_time_min=0, that code is not checked.
+    codes:
+      AUX1: {name: "IT Issue",    default_max_min: 0,   default_enabled: false}
+      AUX2: {name: "Break",       default_max_min: 15,  default_enabled: true}
+      AUX3: {name: "Lunch",       default_max_min: 30,  default_enabled: true}
+      AUX4: {name: "Coaching",    default_max_min: 20,  default_enabled: true}
+      AUX5: {name: "Case Mgmt",   default_max_min: 20,  default_enabled: true}
+      AUX6: {name: "Meeting",     default_max_min: 60,  default_enabled: true}
+      AUX7: {name: "Training",    default_max_min: 120, default_enabled: true}
+      AUX8: {name: "Unavailable", default_max_min: 10,  default_enabled: true}
+      AUX9: {name: "Offline",     default_max_min: 5,   default_enabled: true}
+
+  stagger_rule:
+    description: >
+      Agent 4 threads start staggered to prevent all 10 regions firing Teams alerts simultaneously.
+      Start delay = region_index × stagger_multiplier_sec.
+    stagger_multiplier_sec: 6   # region 0 starts at 0s, region 9 starts at 54s
+
+  skip_inactive_skills:
+    description: >
+      If skill_thresholds[skill].active = false in config.json, Agent 4 skips that skill entirely.
+      Useful for skills that are temporarily offline or not yet staffed.
+
+
+# ─────────────────────────────────────────────────────────────
+# SECTION 6 — DATA INTEGRITY & FILE WRITE RULES
+# Used by: run_all.py, agent4_cms_monitor.py
+# ─────────────────────────────────────────────────────────────
+data_integrity_rules:
+
+  atomic_write_rule:
+    description: >
+      All writes to live_state.json and cms_agents.json use atomic write:
+        1. Write to file.tmp
+        2. os.replace(file.tmp, file)  (atomic rename)
+      If rename fails (OneDrive sync lock), retry up to 3 times with 0.1s sleep.
+      Final fallback: direct write to file (less atomic but always succeeds).
+    applies_to: ["db/live_state.json", "db/cms_agents.json"]
+    retry_count: 3
+    retry_sleep_sec: 0.1
+
+  shared_lock_rule:
+    description: >
+      cms_agents.json is written by 10 region threads simultaneously.
+      A single threading.Lock() stored in sys.modules under key '__rta_cms_agents_lock__'
+      is shared across all region module copies (since each region loads agent4 as a
+      separate module, a plain class-level lock would NOT be shared).
+      Always acquire _CMS_STATE_LOCK before reading + writing cms_agents.json.
+
+  wal_mode_rule:
+    description: >
+      SQLite history.db uses WAL (Write-Ahead Log) mode.
+      This allows concurrent reads during writes — critical for chatbot querying
+      while 10 region threads are simultaneously inserting.
+      Never switch to journal mode or use check_same_thread=False workarounds.
+
+  retention_rule:
+    description: >
+      history.db retains data for 7 days rolling.
+      Cleanup (DELETE WHERE timestamp < now - 7 days) runs at most once per hour.
+      Do not increase beyond 30 days without migrating to PostgreSQL.
+    retention_days: 7
+    cleanup_min_interval_sec: 3600
+
+
+# ─────────────────────────────────────────────────────────────
+# SECTION 7 — LLM USAGE RULES
+# Used by: core/llm.py, workflow.py, app.py
+# ─────────────────────────────────────────────────────────────
+llm_rules:
+
+  provider_priority:
+    - provider: NVIDIA NIM
+      model: "meta/llama-3.1-70b-instruct"
+      role: "Primary — best quality for lever analysis"
+    - provider: Groq
+      model: "llama3-70b-8192"
+      role: "First fallback — fast response"
+    - provider: Gemini
+      model: "gemini-1.5-flash"
+      role: "Secondary fallback"
+
+  rotation_rule:
+    description: >
+      Keys are rotated round-robin. On 429 (rate limit): rotate key and apply
+      exponential backoff (max 30s wait). Total retries = 2 × pool size.
+
+  temperature_rule:
+    value: 0.3
+    reason: "Low temperature for deterministic, consistent lever and analyst outputs"
+
+  per_region_lock_rule:
+    description: >
+      Only one LLM call per region at a time (per-region threading.Lock).
+      A2 and chatbot calls from the same region queue — they never run in parallel.
+
+  use_llm_condition:
+    description: >
+      Agent 2 only uses LLM when AUX agents exist and can be moved.
+      If no agents are on AUX: skip LLM, use rule-based recommendation.
+      This prevents wasting LLM tokens when no actionable recommendation is possible.
+
+
+# ─────────────────────────────────────────────────────────────
+# SECTION 8 — CHATBOT SQL GENERATION RULES
+# Used by: prompts/chatbot_sql_gen.txt → LLM
+# ─────────────────────────────────────────────────────────────
+sql_rules:
+
+  safety_rules:
+    - "Only SELECT statements allowed. Any DROP, UPDATE, INSERT, DELETE raises an error before execution."
+    - "Region tags must come from the known list (rta, cn, au, emea, hk, my, kr, th, br, tw). Never guess."
+    - "Date constraint is injected server-side by Python. LLM must copy it verbatim — never recalculate dates."
+    - "Max rows returned: 500. Prevents OOM on large queries."
+
+  table_routing_rules:
+    - "SLA, band, queue, lever, breach, root_cause → query skill_history table"
+    - "Agents, AUX, who is on break, names, time on AUX → query cms_history table"
+    - "NEVER mix columns between tables (no sla column in cms_history)"
+
+  time_conversion_rules:
+    - "All timestamps stored in 24-hour format (YYYY-MM-DD HH:MM:SS)"
+    - "Business hours 1–8 without am/pm = PM (add 12): 4:50 → 16:50, 3:00 → 15:00"
+    - "9:00–12:00 without am/pm = AM: 9:00 → 09:00, 11:00 → 11:00"
+    - "For 'at HH:MM': use strftime('%H:%M', timestamp) BETWEEN 'HH:MM-2min' AND 'HH:MM+2min'"
+
+  query_pattern_rules:
+    - "For worst/most impacted/lowest SLA → ORDER BY sla ASC LIMIT N"
+    - "NEVER use sla < (SELECT MIN(sla)...) — always returns 0 rows"
+    - "NEVER use sla = (SELECT MIN(sla)...) with subquery — use ORDER BY + LIMIT"
+    - "For agents on AUX longest → WHERE state='AUX' ORDER BY time_seconds DESC"
+
+  limit_rules:
+    single_point:   "LIMIT 5 — for queries at a specific time"
+    range_or_day:   "LIMIT 60 — for yesterday, today, past N hours, all day"
+    worst_skill:    "LIMIT 6 — one per skill at lowest SLA"
+    default:        "LIMIT 20 — if unclear"
+
+  required_columns:
+    skill_history: ["timestamp", "region_tag", "skill", "sla", "band", "queue", "lever_fired", "root_cause"]
+    cms_history:   ["timestamp", "region_tag", "skill", "agent_name", "aux_reason", "state", "time_in_state", "time_seconds"]
+
+
+# ─────────────────────────────────────────────────────────────
+# SECTION 9 — CHATBOT ANSWER RULES
+# Used by: prompts/chatbot_answer.txt → LLM answer generation
+# ─────────────────────────────────────────────────────────────
+general_rules:
+  - "ANTI-HALLUCINATION: ONLY use facts from the context. If context says 'No data found' — reply with that only, never invent data."
+  - "Always use full region names (India, Hong Kong…) — never raw tags (rta, hk…)."
+  - "Convert all raw timestamps: '2026-06-09 16:45:00' → '4:45 PM'."
+  - "Bold all key metrics, skill names, agent names, lever colours, and band names."
+  - "Never dump raw dicts, column names, or unformatted numbers."
+  - "No padding or filler intros — start directly with the answer."
+  - "For full-day/range questions use ALL rows in context — do not pick only a few."
+  - "If no lever fired — explicitly say '✅ No lever fires recorded' so the reader knows it was checked."
+  - "ANTI-AGGREGATION: When the question is about a REGION (e.g. 'SLA for China', 'how is India', 'status of Hong Kong'), NEVER collapse all skills into a single summary line. ALWAYS show each skill individually with its own SLA, band, queue, and lever. A region has 6 skills — all 6 must appear."
+  - "SKILL NAME GUARD: Only use skill names that appear in the context or in skills_by_region above. NEVER invent or derive a skill name from a region name (e.g. 'ProSupport CHN' is NOT a skill name — it is a client label). If skill names are not in context, show counts only."
+
+anti_hallucination_agent_names:
+  - "If cms_agents.json not yet loaded: show count only. Never invent agent names."
+  - "Guard message: '⚠ Individual agent names NOT available — CMS data not yet loaded. Show count only.'"
+  - "If agents ARE present in context: name them explicitly (Name, AUX reason, duration)."
+  - "Never show an empty agent table — if names unavailable, show counts per skill instead."
+
+
+# ─────────────────────────────────────────────────────────────
+# SECTION 10 — CHATBOT OUTPUT FORMAT RULES
+# Used by: LLM when generating answers
+# ─────────────────────────────────────────────────────────────
+output_formats:
+
+  current_status:
+    trigger: "how are all regions, current status, SLA now, live overview"
+    format: |
+      Use a markdown table — one row per skill:
+      | Region | Skill | SLA | Band | Queue | Avail | Lever |
+      Add a 1-line summary: "X regions healthy, Y in warning, Z breached."
+
+  region_status:
+    trigger: "SLA for China, how is India, status of Hong Kong, current SLA for [region], what is the SLA for [region]"
+    format: |
+      ALWAYS show every skill in the region individually. NEVER aggregate into one line.
+      Start with a one-line header: "**[Region]** — [N] skills | [timestamp]"
+      Then per-skill bullets (one block per skill, 4 lines each):
+      - **Skill:** TS_CN_ProDB  |  **SLA:** 61.7% — 🔴 SEVERE
+        **Queue:** 8 waiting  |  **Available:** 0 agents
+        **Lever:** 🔴 Black fired
+      Then a summary line at the bottom: "X skills healthy · Y in warning · Z breached."
+      RULES:
+      - Show ALL skills (6 for every region) — never skip any
+      - Use only skill names from skills_by_region — never invent one from the region label
+      - Band emoji: ✅ HEALTHY/EXCELLENT · ⚠️ WARNING · 🔴 CRITICAL/SEVERE
+
+  single_point:
+    trigger: "what was [specific skill] at 4:50 PM, SLA of ProDB at 3 PM — use ONLY when a SPECIFIC skill name is mentioned alongside a specific time"
+    format: |
+      3–4 bullet points:
+      - **Skill:** name  |  **Region:** name
+      - **SLA:** 87.3% — ⚠️ WARNING
+      - **Queue:** 4 waiting  |  **Available:** 6 agents
+      - **Lever:** None fired  (or: 🔴 Red lever fired at 3:02 PM)
+      NOTE: This format is for single-skill + single-time queries ONLY. For region-wide queries use region_status format.
+
+  range_or_fullday:
+    trigger: "what happened last day, how did X do yesterday, performance last hour"
+    format: |
+      Use a SCORECARD table followed by a short story summary. Exactly this structure:
+
+      ### [Skill] · [Region] · [Date]
+
+      | Metric | Value |
+      |--------|-------|
+      | Peak SLA | X% ✅ |
+      | Lowest SLA | X% 🔴 SEVERE (or relevant band emoji) |
+      | Average SLA | ~X% |
+      | Peak Queue | N calls (H:MM AM/PM) |
+      | Agents Available | N at worst point |
+      | Lever Fired | None / 🔴 Red at H:MM AM |
+      | Root Cause | one short phrase |
+
+      **Time in band:** 🔴 SEVERE Xh · ⚠️ WARNING Xh · ✅ HEALTHY Xh
+
+      Then 2–3 sentences of plain narrative below the table — what happened,
+      when it was worst, whether it recovered, and why. No bullet points in
+      the narrative. Keep it concise and readable.
+
+  improvement_actions:
+    trigger: "how to improve, fix breached skills, what actions to take, what should we do, recommendations, how can we improve"
+    format: |
+      Use the EXACT numbers and agent names from context — never give generic advice.
+      For each breached skill, one block:
+
+      ### [Skill] · [SLA]% [band emoji] · [Region]
+
+      **🚨 Immediate (next 5–10 min):**
+      - If AUX agents are listed: name them — "Pull **[Name]** back from Break (22 min) — longest first"
+      - If Queue > 0 and Avail = 0: state exactly "X calls waiting with 0 agents — pull back N AUX agents"
+      - If A2 recommended moves: name those agents
+
+      **⏱ Short-term (next 30 min):**
+      - State actual OCW value — if high, identify which calls to prioritise
+      - If no lever fired yet: recommend exact lever colour (Amber if SLA 80–90%, Red if 70–80%, Black if <70%)
+      - If lever already fired: confirm and state next escalation if SLA still falling
+
+      **🔍 Root cause:** one sentence using the actual breach reasons from context.
+
+      RULES (never break these):
+      - NEVER write "increase available agents" without naming who and from where
+      - NEVER write "analyze AUX" — state which agent is on which code and for how long
+      - If agent names unavailable: say "X agents on AUX — names pending CMS data" and give count-based advice
+      - Sort by severity: SEVERE → CRITICAL → WARNING
+      - End with: **Priority order: [Skill] (SEVERE) → [Skill] (CRITICAL)**
+
+  worst_impacted:
+    trigger: "which skill is worst, most critical region"
+    format: |
+      One sentence naming the worst, then 3 bullets:
+      **[Skill] in [Region]** is the worst performer.
+      - **SLA:** 67.4% — 🔴 SEVERE
+      - **Queue:** 9 waiting, **OCW:** 3 calls
+      - **Lever:** 🔴 Red fired
+
+  agent_aux:
+    trigger: "who is on AUX, which agents are on break"
+    format: |
+      If context says "No agents currently on AUX" or count = 0:
+        Reply with a single line: "✅ No agents currently on AUX in [Region]." — NO table.
+
+      If agents ARE on AUX and names are available: show a markdown table:
+        | Agent | AUX Reason | Duration | Skill | Region |
+        One row per agent. Summary line: "X agents on non-productive AUX."
+
+      If agents ARE on AUX but names NOT available (CMS data pending):
+        Show counts only per skill — do NOT invent names, do NOT show an empty table.
+        Summary line: "X agents on AUX across Y skills — individual names pending CMS data."
+
+  lever:
+    trigger: "what levers fired, any escalations"
+    format: |
+      Markdown table sorted by time:
+      | Time | Region | Skill | Lever | Action |
+      If none: "✅ No lever fires recorded in this period."
+
+  comparison:
+    trigger: "which region is worst, compare India vs China"
+    format: |
+      Side-by-side table:
+      | Metric | Region A | Region B |
+      Rows: Avg SLA, Band, Breached skills, Levers fired
+
+  trend:
+    trigger: "is SLA improving, when did things get bad"
+    format: |
+      Timeline table:
+      | Time | SLA | Band | Event |
+      Brief narrative above the table.

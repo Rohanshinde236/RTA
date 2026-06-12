@@ -140,6 +140,33 @@ def get_aht_target_sec(skill_name: str) -> int:
     return sk.get("aht_target_min", 24) * 60
 
 
+def get_aux_max(skill_name: str) -> int:
+    """
+    Return the max number of agents allowed concurrently on AUX for this skill
+    before time-based AUX over-limit alerts fire.
+
+    Configured via 'aux_threshold' in skill_thresholds[skill_name].
+    Falls back to name-pattern defaults:
+      ProDB / ProCNX        → 3  (healthy, large teams)
+      VICHW / LicKeys       → 1  (consistently struggling — any excess AUX matters)
+      EMEA MLSCST_*         → 1  (small single-language teams)
+      Elite / CritAcct etc. → 2  (moderate tolerance)
+      Unlisted              → 999 (no limit — preserves legacy behaviour)
+    """
+    sk = get_skill(skill_name)
+    if "aux_threshold" in sk:
+        return int(sk["aux_threshold"])
+    # Pattern-based fallback when not explicitly configured
+    n = skill_name.upper()
+    if "VICHW" in n or "LICKEY" in n:
+        return 1
+    if "PRODB" in n or "PROCNX" in n:
+        return 3
+    if "MLSCST" in n:   # EMEA language queues are single-agent or very small
+        return 1
+    return 2            # Elite, CritAcct, CSTVCE, CSTElite, CSTCE, CSTCE, etc.
+
+
 def get_ocw_threshold(skill_name: str = None) -> int:
     """
     Return OCW threshold in seconds.

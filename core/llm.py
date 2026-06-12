@@ -5,22 +5,34 @@ import itertools
 import requests
 from dotenv import load_dotenv
 
-load_dotenv("config.env")
+load_dotenv("config.env", override=True)
 
 # ─── Build unified key pool ────────────────────────────────────
 # Each entry: (provider, api_key, model)
+# Order matters — pool is cycled round-robin.
+# NVIDIA goes FIRST (primary for lever analysis — powerful 70B model).
+# Groq goes SECOND (fast fallback if NVIDIA keys exhausted).
+# Gemini goes LAST (secondary fallback).
 _key_pool = []
 
-# Groq keys
+# ── NVIDIA keys (primary for lever/agent LLM calls) ───────────
+nvidia_model    = os.getenv("NVIDIA_MODEL",    "meta/llama-3.3-70b-instruct")
+nvidia_base_url = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+for i in range(1, 10):  # supports up to 9 NVIDIA keys
+    k = os.getenv(f"NVIDIA_API_KEY_{i}")
+    if k and k.strip():
+        _key_pool.append(("nvidia", k.strip(), nvidia_model))
+
+# ── Groq keys (fallback) ──────────────────────────────────────
 groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-for i in range(1, 9):  # supports up to 8 Groq keys
+for i in range(1, 10):  # supports up to 9 Groq keys
     k = os.getenv(f"GROQ_API_KEY_{i}")
     if k and k.strip() and not k.strip().startswith("gsk_..."):
         _key_pool.append(("groq", k.strip(), groq_model))
 
-# Gemini keys (uncomment in config.env to activate)
+# ── Gemini keys (last-resort fallback) ────────────────────────
 gemini_model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-for i in range(1, 9):  # supports up to 8 Gemini keys
+for i in range(1, 10):  # supports up to 9 Gemini keys
     k = os.getenv(f"GEMINI_API_KEY_{i}")
     if k and k.strip():
         _key_pool.append(("gemini", k.strip(), gemini_model))
@@ -44,19 +56,29 @@ def get_region_lock(region_tag: str) -> threading.Lock:
 
 # ─── Unified call ──────────────────────────────────────────────
 def call_llm(prompt: str, region_tag: str = "global",
-             max_tokens: int = 1024, retries: int = None) -> str:
+             max_tokens: int = 1024, retries: int = None,
+             max_wall_sec: float = 45.0) -> str:
     """
     Call LLM using the shared key pool with round-robin rotation.
     Per-region lock ensures one LLM call at a time per region.
     Rotates to next key on 429 with exponential backoff.
+
+    max_wall_sec bounds the TOTAL time spent retrying. Without it, a large key
+    pool (len*2 retries × 30–60s timeouts) could block a region's poll loop for
+    minutes when providers are slow/exhausted — which froze breached regions'
+    dashboards. Once the deadline passes we stop retrying and return gracefully.
     """
     if retries is None:
         retries = len(_key_pool) * 2  # two full passes through all keys
 
     lock = get_region_lock(region_tag)
     with lock:
+        deadline = time.monotonic() + max_wall_sec
         rate_limit_count = 0
         for attempt in range(retries):
+            if time.monotonic() >= deadline:
+                print(f"  LLM wall-clock deadline ({max_wall_sec}s) hit — giving up")
+                return "LLM unavailable — timed out"
             with _pool_lock:
                 idx = next(_pool_cycle)
             provider, api_key, model = _key_pool[idx]
@@ -64,7 +86,9 @@ def call_llm(prompt: str, region_tag: str = "global",
 
             print(f"  LLM call attempt {attempt+1} ({key_label}, model={model})...")
             try:
-                if provider == "groq":
+                if provider == "nvidia":
+                    response = _call_nvidia(prompt, api_key, model, max_tokens)
+                elif provider == "groq":
                     response = _call_groq(prompt, api_key, model, max_tokens)
                 elif provider == "gemini":
                     response = _call_gemini(prompt, api_key, model, max_tokens)
@@ -76,13 +100,18 @@ def call_llm(prompt: str, region_tag: str = "global",
 
             except RateLimitError:
                 rate_limit_count += 1
-                # After cycling through all keys once, wait before trying again
+                # After cycling through all keys once, wait before trying again —
+                # but never sleep past the wall-clock deadline.
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    print(f"  LLM wall-clock deadline ({max_wall_sec}s) hit — giving up")
+                    return "LLM unavailable — timed out"
                 if rate_limit_count % len(_key_pool) == 0:
-                    wait = min(30, 5 * (rate_limit_count // len(_key_pool)))
-                    print(f"  All keys rate-limited — waiting {wait}s before retry...")
-                    time.sleep(wait)
+                    wait = min(30, 5 * (rate_limit_count // len(_key_pool)), remaining)
+                    print(f"  All keys rate-limited — waiting {wait:.0f}s before retry...")
+                    time.sleep(max(0, wait))
                 else:
-                    time.sleep(1)  # brief pause between individual key rotations
+                    time.sleep(min(1, remaining))  # brief pause between key rotations
                 print(f"  429 on {key_label} — rotating to next key")
                 continue
             except Exception as e:
@@ -96,6 +125,34 @@ def call_llm(prompt: str, region_tag: str = "global",
 
 class RateLimitError(Exception):
     pass
+
+
+def _call_nvidia(prompt: str, api_key: str, model: str, max_tokens: int) -> str:
+    """Call NVIDIA NIM via OpenAI-compatible REST endpoint (no SDK needed)."""
+    base_url = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+    resp = requests.post(
+        f"{base_url}/chat/completions",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model":       model,
+            "messages":    [{"role": "user", "content": prompt}],
+            "max_tokens":  max_tokens,
+            "temperature": 0.3,
+            "top_p":       0.7,
+            "stream":      False,
+        },
+        timeout=30,
+    )
+    if resp.status_code == 429:
+        raise RateLimitError()
+    if resp.status_code == 401:
+        raise Exception("NVIDIA auth error (401) — check API key")
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"].strip()
+
 
 def _call_groq(prompt: str, api_key: str, model: str, max_tokens: int) -> str:
     resp = requests.post(

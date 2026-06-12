@@ -936,7 +936,8 @@ def api_logs_clear():
 
 # -- Chatbot -------------------------------------------------------------------
 
-LIVE_STATE_PATH = os.path.join(BASE_DIR, "db", "live_state.json")
+LIVE_STATE_PATH  = os.path.join(BASE_DIR, "db", "live_state.json")
+CMS_AGENTS_PATH  = os.path.join(BASE_DIR, "db", "cms_agents.json")
 
 CHAT_CONTENT = """
 <div class="d-flex flex-column" style="height: calc(100vh - 120px);">
@@ -1038,7 +1039,23 @@ def _load_live_state() -> dict:
         return {}
 
 
-def _build_context(question: str, live_state: dict) -> str:
+def _load_cms_agents() -> dict:
+    """
+    Read cms_agents.json written by Agent 4 after every CMS poll.
+    Returns {region_tag: {skill_name: [agent_dicts]}} or {} if not available.
+    Each agent_dict has: name, state, aux_reason, aux_key, aux_name, time_minutes, skill.
+    """
+    try:
+        with open(CMS_AGENTS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        logger.warning(f"cms_agents.json read error: {e}")
+        return {}
+
+
+def _build_context(question: str, live_state: dict, cms_agents: dict = None) -> str:
     """
     Build LLM context from live_state filtered by what the question is asking.
     Only sends relevant data -- not the entire state -- to save tokens.
@@ -1054,26 +1071,69 @@ def _build_context(question: str, live_state: dict) -> str:
     specific_skill = skill_match.group(0).upper() if skill_match else None
 
     # -- Detect region intent --------------------------------------------------
+    # Pad question with spaces so word-boundary checks work on first/last word
+    _q = f" {q} "
+
     if specific_skill:
         # Auto-detect region from skill name prefix
-        if "_cn_" in specific_skill.lower():
+        s = specific_skill.lower()
+        if "_cn_" in s:
             region_filter = ["cn"]
-        elif "_au_" in specific_skill.lower():
+        elif "_au_" in s:
             region_filter = ["au"]
-        elif any(x in specific_skill.lower() for x in ["_ger_","_spa_","_fra_","_ita_","_nld_","_pol_","mlscst"]):
+        elif "_hk_" in s:
+            region_filter = ["hk"]
+        elif "_my_" in s:
+            region_filter = ["my"]
+        elif "_kr_" in s:
+            region_filter = ["kr"]
+        elif "_th_" in s:
+            region_filter = ["th"]
+        elif "_br_" in s:
+            region_filter = ["br"]
+        elif "_tw_" in s:
+            region_filter = ["tw"]
+        elif any(x in s for x in ["_ger_","_spa_","_fra_","_ita_","_nld_","_pol_","mlscst"]):
             region_filter = ["emea"]
         else:
             region_filter = ["rta"]
-    elif any(x in q for x in ["india", "ind", "rta"]):
+    # ── "all regions / all dashboards" — must come BEFORE any single-region check ──
+    elif any(x in _q for x in [" all region", " all dashboard", " all 10", " every region",
+                                 " all skill", " across all", " from all"]):
+        region_filter = list(live_state.keys())
+    # ── Single-region checks — use full names OR padded abbreviations only ──────
+    # RULE: 2-3 char codes MUST be padded with spaces to avoid false-matching
+    # common English words (e.g. "tha"→"that", "ind"→"individual", "au"→"because")
+    elif any(x in _q for x in ["india", " rta "]):
         region_filter = ["rta"]
-    elif any(x in q for x in ["china", "cn", "chinese"]):
+    elif any(x in _q for x in ["china", "chinese", " cn "]):
         region_filter = ["cn"]
-    elif any(x in q for x in ["australia", "au", "aus"]):
+    elif any(x in _q for x in ["australia", " aus ", " au "]):
         region_filter = ["au"]
-    elif any(x in q for x in ["emea", "europe", "germany", "france", "spain"]):
+    elif any(x in _q for x in ["emea", "europe", "germany", "france", "spain",
+                                 "italy", "netherlands", "poland"]):
         region_filter = ["emea"]
+    elif any(x in _q for x in ["hong kong", "hongkong", "hkg", " hk "]):
+        region_filter = ["hk"]
+    elif any(x in _q for x in ["malaysia", " mys ", " my "]):
+        region_filter = ["my"]
+    elif any(x in _q for x in ["korea", "korean", " kor ", " kr "]):
+        region_filter = ["kr"]
+    elif any(x in _q for x in ["thailand", "thai", " tha ", " th "]):
+        region_filter = ["th"]
+    elif any(x in _q for x in ["brazil", "brazilian", " bra ", " br "]):
+        region_filter = ["br"]
+    elif any(x in _q for x in ["taiwan", " twn ", " tw "]):
+        region_filter = ["tw"]
     else:
         region_filter = list(live_state.keys())  # all regions
+
+    # -- Parse SLA threshold from question (e.g. "90+", ">90", "above 90") ----
+    import re as _re_sla
+    _sla_threshold = None
+    _sla_m = _re_sla.search(r'(\d+)\s*\+|(?:above|over|greater than|>=?)\s*(\d+)', q)
+    if _sla_m:
+        _sla_threshold = float(_sla_m.group(1) or _sla_m.group(2))
 
     # -- Detect topic intent ---------------------------------------------------
     if specific_skill:
@@ -1088,6 +1148,14 @@ def _build_context(question: str, live_state: dict) -> str:
         topic = "queue"
     elif any(x in q for x in ["compare", "which region", "all region"]):
         topic = "summary"
+    elif any(x in q for x in ["improve", "fix", "action", "recommendation", "suggest",
+                                "how to", "what to do",
+                                "what can we", "what can i",
+                                "what should we", "what should i"]):
+        topic = "improvement"
+    elif any(x in q for x in ["project", "projected", "forecast", "what if", "if agents",
+                                "if we add", "scenario", "predict"]):
+        topic = "all"   # projection questions need full SLA data for all skills
     else:
         topic = "all"
 
@@ -1114,9 +1182,17 @@ def _build_context(question: str, live_state: dict) -> str:
 
         display   = region.get("region_display", tag.upper())
         poll_time = region.get("last_poll_time", "unknown")
-        lines.append(f"=== {display} (last updated: {poll_time}) ===")
 
         skills = region.get("skills", {})
+
+        # Apply SLA threshold filter if user asked for "90+", ">= 85", etc.
+        if _sla_threshold is not None:
+            skills = {s: d for s, d in skills.items()
+                      if d.get("sla") is not None and float(d["sla"]) >= _sla_threshold}
+            if not skills:
+                continue   # skip this region entirely — no skills meet the threshold
+
+        lines.append(f"=== {display} (last updated: {poll_time}) ===")
 
         if topic == "skill_detail":
             # Show full data for the specific skill
@@ -1181,16 +1257,110 @@ def _build_context(question: str, live_state: dict) -> str:
                 lines.append("  No calls in queue currently.")
 
         elif topic == "agents":
-            # AUX and move decisions
+            # AUX agents — use cms_agents.json for full per-agent detail
+            region_cms  = (cms_agents or {}).get(tag, {})
+            cms_present = bool(region_cms)   # False = agent4 hasn't written yet
+            any_agents  = False
+
             for skill, data in skills.items():
-                if data["on_aux"] > 0 or data.get("last_move") or data.get("last_ask"):
-                    lines.append(f"  {skill}: AUX={data['on_aux']}")
+                skill_agents = region_cms.get(skill, [])
+                aux_agents   = [a for a in skill_agents
+                                if a.get("state", "").upper() in ("AUX", "AUX ")]
+                acw_agents   = [a for a in skill_agents
+                                if a.get("state", "").upper() == "ACW"]
+
+                if data["on_aux"] > 0 or aux_agents or data.get("last_move") or data.get("last_ask"):
+                    any_agents = True
+                    lines.append(f"  {skill}: {data['on_aux']} on AUX | "
+                                 f"{data['avail']} available | {data['on_calls']} on calls")
+
+                    if not cms_present:
+                        # cms_agents.json doesn't exist yet (agent4 not started or scrape-only mode)
+                        # Tell LLM not to invent names — show count only
+                        lines.append(
+                            f"    ⚠ Individual agent names NOT available — "
+                            f"CMS data not yet loaded. Show count ({data['on_aux']}) only. "
+                            f"Do NOT invent agent names or durations."
+                        )
+                    elif not aux_agents:
+                        # cms_agents.json exists but no AUX agents found for this skill
+                        lines.append(f"    (No agents in AUX state in current CMS snapshot)")
+                    else:
+                        # Full per-agent detail available
+                        for a in aux_agents:
+                            aux_label = a.get("aux_name") or a.get("aux_reason") or "AUX"
+                            aux_key   = a.get("aux_key", "")
+                            mins      = a.get("time_minutes", 0)
+                            duration  = f"{mins:.0f} min" if mins else "< 1 min"
+                            lines.append(
+                                f"    [AUX] {a['name']} — {aux_label}"
+                                f"{' (' + aux_key + ')' if aux_key else ''} — {duration}"
+                            )
+                    for a in acw_agents:
+                        mins     = a.get("time_minutes", 0)
+                        duration = f"{mins:.0f} min" if mins else "< 1 min"
+                        lines.append(f"    [ACW] {a['name']} — {duration}")
                     if data.get("last_move"):
-                        lines.append(f"    Last move recommendation: {data['last_move']}")
+                        lines.append(f"    A2 move recommendation: {data['last_move']}")
                     if data.get("last_ask"):
-                        lines.append(f"    Last ask recommendation: {data['last_ask']}")
+                        lines.append(f"    A2 ask recommendation: {data['last_ask']}")
                     if data.get("a2_note"):
                         lines.append(f"    AI note: {data['a2_note']}")
+            if not any_agents:
+                lines.append("  ✅ No agents currently on AUX.")
+
+        elif topic == "improvement":
+            # Breached skills with full detail — actionable improvement advice
+            region_cms = (cms_agents or {}).get(tag, {})
+            breached   = {s: d for s, d in skills.items()
+                          if d.get("breached") or d.get("band") in ("CRITICAL", "SEVERE")}
+            if not breached:
+                # Include WARNING too as lower-priority items
+                warning = {s: d for s, d in skills.items() if d.get("band") == "WARNING"}
+                if warning:
+                    lines.append("  No CRITICAL/SEVERE breaches. WARNING skills (at risk):")
+                    breached = warning
+                else:
+                    lines.append("  ✅ All skills healthy — no improvements needed right now.")
+
+            for skill, data in breached.items():
+                lines.append(
+                    f"  {skill}: SLA={data['sla']}% ({data['band']}) | "
+                    f"Queue={data['queue']} calls | OCW={data['ocw']} | "
+                    f"Avail={data['avail']} agents available | "
+                    f"AUX={data['on_aux']} on AUX | OnCalls={data['on_calls']}"
+                )
+                if data.get("breach_reasons"):
+                    lines.append(f"    Breach triggers: {data['breach_reasons']}")
+                if data.get("root_cause"):
+                    lines.append(f"    Root cause: {data['root_cause']}")
+                if data.get("a2_note"):
+                    lines.append(f"    A2 analysis: {data['a2_note']}")
+                if data.get("last_move"):
+                    lines.append(f"    A2 move recommendation: {data['last_move']}")
+                if data.get("last_ask"):
+                    lines.append(f"    A2 ask recommendation: {data['last_ask']}")
+                if data.get("lever_fired"):
+                    lines.append(f"    Lever already fired: {data['lever_fired']}")
+
+                # AUX agents for this skill — the main lever for immediate SLA recovery
+                skill_agents = region_cms.get(skill, [])
+                aux_agents   = [a for a in skill_agents
+                                if a.get("state", "").upper() in ("AUX", "AUX ")]
+                if aux_agents:
+                    lines.append(f"    AUX agents who can be pulled back immediately:")
+                    for a in aux_agents:
+                        aux_label = a.get("aux_name") or a.get("aux_reason") or "AUX"
+                        mins      = a.get("time_minutes", 0)
+                        duration  = f"{mins:.0f} min" if mins else "< 1 min"
+                        lines.append(
+                            f"      → {a['name']} — {aux_label} — {duration}"
+                        )
+                elif data["on_aux"] > 0:
+                    lines.append(
+                        f"    {data['on_aux']} agent(s) on AUX — names unavailable "
+                        f"(CMS data pending). Consider pulling back from AUX."
+                    )
 
         elif topic == "summary":
             # One line per skill -- all regions comparison
@@ -1215,7 +1385,18 @@ def _build_context(question: str, live_state: dict) -> str:
 
         lines.append("")
 
-    return "\n".join(lines)
+    context = "\n".join(lines)
+
+    # ── Guard against 413 "Request too large" on Groq 8k-context models ───────
+    # llama-3.1-8b-instant: 8,192 token context. Rules (~600 tok) + question (~50 tok)
+    # + safety = ~1,500 tokens overhead → ~6,700 tokens left for context = ~26,800 chars.
+    # Cap at 22,000 chars to leave headroom.
+    _MAX_CONTEXT_CHARS = 22_000
+    if len(context) > _MAX_CONTEXT_CHARS:
+        context = context[:_MAX_CONTEXT_CHARS] + "\n\n...[context truncated — too large for model]"
+        logger.warning(f"_build_context: truncated to {_MAX_CONTEXT_CHARS} chars")
+
+    return context
 
 
 def _build_history_context(question: str) -> str:
@@ -1338,7 +1519,18 @@ def _build_history_context(question: str) -> str:
         question, _re2.IGNORECASE
     ))
 
-    region_map = {"rta": "India", "cn": "China", "au": "Australia", "emea": "EMEA"}
+    region_map = {
+        "rta":  "India",
+        "cn":   "China",
+        "au":   "Australia",
+        "emea": "EMEA",
+        "hk":   "Hong Kong",
+        "my":   "Malaysia",
+        "kr":   "Korea",
+        "th":   "Thailand",
+        "br":   "Brazil",
+        "tw":   "Taiwan",
+    }
 
     def _fmt_ts(ts):
         try:
@@ -1380,7 +1572,7 @@ def _build_history_context(question: str) -> str:
         date_label = _fmt_ts(rows[0].get("timestamp", ""))[:6]  # "Jun 08"
 
         lines = [
-            f"REGION KEY: rta=India | cn=China | au=Australia | emea=EMEA",
+            f"REGION KEY: rta=India | cn=China | au=Australia | emea=EMEA | hk=Hong Kong | my=Malaysia | kr=Korea | th=Thailand | br=Brazil | tw=Taiwan",
             f"",
             f"AGGREGATED DAY SUMMARY — {region} / {skill_name} — {date_label}",
             f"Total readings: {len(rows)}",
@@ -1416,7 +1608,7 @@ def _build_history_context(question: str) -> str:
     # ── Point query: list individual rows (unchanged) ─────────────────────────
     MAX_ROWS = 15
     lines = [
-        "REGION KEY: rta=India | cn=China | au=Australia | emea=EMEA",
+        "REGION KEY: rta=India | cn=China | au=Australia | emea=EMEA | hk=Hong Kong | my=Malaysia | kr=Korea | th=Thailand | br=Brazil | tw=Taiwan",
         "",
         "HISTORICAL RTA DATA from database:",
         f"Total matching records: {len(rows)} (showing top {min(len(rows), MAX_ROWS)})",
@@ -1449,102 +1641,147 @@ def _build_history_context(question: str) -> str:
     return context
 
 
-def _get_nvidia_cfg() -> tuple:
-    """Return (api_key, base_url, model) from config.env."""
+def _get_nvidia_keys() -> list:
+    """Return list of (api_key, base_url, model) tuples — one per configured NVIDIA key."""
     from dotenv import load_dotenv
-    load_dotenv(os.path.join(BASE_DIR, "config.env"), override=False)
-    api_key  = os.getenv("NVIDIA_API_KEY", "").strip()
+    load_dotenv(os.path.join(BASE_DIR, "config.env"), override=True)
     base_url = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1").strip()
-    model    = os.getenv("NVIDIA_MODEL",   "meta/llama-3.3-70b-instruct").strip()
-    return api_key, base_url, model
+    model    = os.getenv("NVIDIA_MODEL",    "meta/llama-3.3-70b-instruct").strip()
+    keys = []
+    for i in range(1, 10):   # supports NVIDIA_API_KEY_1 through _9
+        k = os.getenv(f"NVIDIA_API_KEY_{i}", "").strip()
+        if k and len(k) > 20:
+            keys.append((k, base_url, model))
+    # Backward-compat: also check legacy NVIDIA_API_KEY (no suffix)
+    legacy = os.getenv("NVIDIA_API_KEY", "").strip()
+    if legacy and len(legacy) > 20 and not any(legacy == t[0] for t in keys):
+        keys.append((legacy, base_url, model))
+    return keys
 
 
 def _get_groq_keys() -> list:
-    """Fallback: Groq keys if NVIDIA key is missing."""
+    """Groq keys — primary for chat."""
     from dotenv import load_dotenv
-    load_dotenv(os.path.join(BASE_DIR, "config.env"), override=False)
+    load_dotenv(os.path.join(BASE_DIR, "config.env"), override=True)
     keys = []
-    for i in range(1, 9):
+    for i in range(1, 10):   # supports GROQ_API_KEY_1 through _9
         k = os.getenv(f"GROQ_API_KEY_{i}", "").strip()
         if k and not k.startswith("gsk_...") and len(k) > 20:
             keys.append(k)
     return keys
 
 
-def _call_llm_raw(prompt: str, max_tokens: int = 600, is_sql: bool = False) -> str:
+def _call_llm_raw(prompt: str, max_tokens: int = 1200, is_sql: bool = False) -> str:
     """
-    Call NVIDIA NIM (OpenAI-compatible) for all LLM tasks.
-    Falls back to Groq if NVIDIA key is not configured.
-    is_sql=True uses lower temperature for deterministic SQL.
+    PRIMARY  : Groq round-robin across all configured keys (fast, ~1-3s).
+    FALLBACK : NVIDIA NIM if every Groq key is rate-limited (429).
     """
     from dotenv import load_dotenv
-    load_dotenv(os.path.join(BASE_DIR, "config.env"), override=False)
+    load_dotenv(os.path.join(BASE_DIR, "config.env"), override=True)
 
-    nvidia_key, nvidia_base_url, nvidia_model = _get_nvidia_cfg()
-
-    # ── Primary: NVIDIA NIM ──────────────────────────────────────────────
-    if nvidia_key and len(nvidia_key) > 20:
-        try:
-            from openai import OpenAI
-            client = OpenAI(base_url=nvidia_base_url, api_key=nvidia_key)
-            completion = client.chat.completions.create(
-                model=nvidia_model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1 if is_sql else 0.2,
-                top_p=0.7,
-                max_tokens=max_tokens,
-                stream=False,
-            )
-            return completion.choices[0].message.content.strip()
-        except Exception as e:
-            logger.error(f"NVIDIA NIM error: {e}")
-            # Fall through to Groq fallback
-
-    # ── Fallback: Groq round-robin ────────────────────────────────────────
+    temp         = 0.1 if is_sql else 0.2
     import requests as req
-    keys = _get_groq_keys()
-    if not keys:
-        return "LLM not configured — add NVIDIA_API_KEY or GROQ_API_KEY_1 to config.env."
 
-    model_sql    = "llama-3.1-8b-instant"
-    model_answer = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    # ── Primary: Groq round-robin ─────────────────────────────────────────
+    keys = _get_groq_keys()
+    # SQL generation: use fast 8b model (short prompt, fits 8k context easily)
+    # Chat answer:    use large-context model — chat prompt includes rules.yaml +
+    #                 full region context which can exceed 8k tokens on 8b-instant.
+    # Override via GROQ_MODEL_CHAT in config.env. Default: llama-3.3-70b-versatile (32k ctx).
+    model_sql    = os.getenv("GROQ_MODEL",      "llama-3.1-8b-instant")
+    model_answer = os.getenv("GROQ_MODEL_CHAT", "llama-3.3-70b-versatile")
     model        = model_sql if is_sql else model_answer
 
-    for idx, api_key in enumerate(keys):
-        try:
-            resp = req.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}",
-                         "Content-Type": "application/json"},
-                json={
-                    "model": model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": max_tokens,
-                    "temperature": 0.1 if is_sql else 0.2,
-                },
-                timeout=30,
-            )
-            if resp.status_code == 429:
-                logger.warning(f"Groq fallback: key {idx+1} rate-limited, rotating")
-                time.sleep(0.5)
+    groq_errors = []
+    if keys:
+        for idx, api_key in enumerate(keys):
+            try:
+                resp = req.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}",
+                             "Content-Type": "application/json"},
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": max_tokens,
+                        "temperature": temp,
+                    },
+                    timeout=30,
+                )
+                if resp.status_code == 429:
+                    groq_errors.append(f"key{idx+1}:429")
+                    logger.warning(f"Groq key {idx+1} rate-limited, rotating")
+                    time.sleep(0.5)
+                    continue
+                if not resp.ok:
+                    groq_errors.append(f"key{idx+1}:HTTP{resp.status_code}")
+                    logger.error(f"Groq key {idx+1} HTTP {resp.status_code}: {resp.text[:120]}")
+                    continue
+                return resp.json()["choices"][0]["message"]["content"].strip()
+            except Exception as e:
+                groq_errors.append(f"key{idx+1}:{type(e).__name__}")
+                logger.error(f"Groq key {idx+1} exception: {e}")
+                if "429" in str(e):
+                    time.sleep(0.5)
                 continue
-            resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"].strip()
-        except Exception as e:
-            if "429" in str(e):
-                time.sleep(0.5)
-                continue
-            logger.error(f"Groq fallback error (key {idx+1}): {e}")
-            return f"Error calling LLM: {str(e)}"
+        logger.warning(f"All Groq keys exhausted ({groq_errors}) — trying NVIDIA NIM fallback")
+    else:
+        logger.warning("No Groq keys configured — trying NVIDIA NIM")
 
-    return "All LLM providers are currently unavailable. Please try again shortly."
+    # ── Fallback: NVIDIA NIM (rotate through all configured keys) ────────────
+    nvidia_keys  = _get_nvidia_keys()
+    nvidia_errors = []
+
+    if nvidia_keys:
+        for nidx, (nvidia_key, nvidia_base_url, nvidia_model) in enumerate(nvidia_keys):
+            try:
+                resp = req.post(
+                    f"{nvidia_base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {nvidia_key}",
+                             "Content-Type": "application/json"},
+                    json={
+                        "model":       nvidia_model,
+                        "messages":    [{"role": "user", "content": prompt}],
+                        "max_tokens":  max_tokens,
+                        "temperature": temp,
+                        "top_p":       0.7,
+                        "stream":      False,
+                    },
+                    timeout=30,
+                )
+                if resp.status_code == 429:
+                    nvidia_errors.append(f"nvkey{nidx+1}:429")
+                    logger.warning(f"NVIDIA key {nidx+1} rate-limited, rotating")
+                    time.sleep(0.5)
+                    continue
+                if resp.status_code == 401:
+                    nvidia_errors.append(f"nvkey{nidx+1}:401-auth")
+                    logger.error(f"NVIDIA key {nidx+1} auth error (401) — skipping")
+                    continue
+                if not resp.ok:
+                    nvidia_errors.append(f"nvkey{nidx+1}:HTTP{resp.status_code}")
+                    logger.error(f"NVIDIA key {nidx+1} HTTP {resp.status_code}")
+                    continue
+                return resp.json()["choices"][0]["message"]["content"].strip()
+            except Exception as e:
+                nvidia_errors.append(f"nvkey{nidx+1}:{type(e).__name__}")
+                logger.error(f"NVIDIA key {nidx+1} exception: {e}")
+                continue
+        logger.error(f"All NVIDIA keys failed: {nvidia_errors}")
+    else:
+        nvidia_errors = ["no NVIDIA keys configured"]
+
+    logger.error(f"All providers failed. Groq: {groq_errors} | NVIDIA: {nvidia_errors}")
+    return (f"⚠️ All LLM providers unavailable.\n"
+            f"Groq ({len(keys)} keys): {', '.join(groq_errors) or 'no keys tried'}\n"
+            f"NVIDIA ({len(nvidia_keys)} keys): {', '.join(nvidia_errors)}")
 
 
 def _call_llm_for_chat(question: str, context: str) -> str:
     """Call LLM for final answer generation (quality model)."""
     from core.prompt_loader import load_prompt, clear_cache
     prompt = load_prompt("chatbot_answer", context=context, question=question)
-    return _call_llm_raw(prompt, max_tokens=600, is_sql=False)
+    return _call_llm_raw(prompt, max_tokens=1500, is_sql=False)
 
 
 @app.route("/legacy/chat")
@@ -1836,7 +2073,8 @@ def api_chat():
         context = _build_history_context(question)
     else:
         live_state = _load_live_state()
-        context    = _build_context(question, live_state)
+        cms_agents = _load_cms_agents()
+        context    = _build_context(question, live_state, cms_agents)
 
     answer = _call_llm_for_chat(question, context)
     return jsonify({"answer": answer})

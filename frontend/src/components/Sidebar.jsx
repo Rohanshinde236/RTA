@@ -31,12 +31,76 @@ export default function Sidebar() {
   }, [dark])
 
   return (
-    <aside className="flex flex-col w-56 min-w-[224px] bg-[#0d1526] border-r border-[#1e3354]">
+    <aside className="flex flex-col w-56 min-w-[224px] border-r border-[#1e3354]"
+      style={{background:'linear-gradient(180deg, #0d1829 0%, #080d1a 100%)'}}>
       {/* Brand */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-[#1e3354]">
-        <span className="text-2xl">📊</span>
+        {/* Custom SVG Logo */}
+        <div className="relative flex-shrink-0 w-10 h-10">
+          <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
+            {/* Outer gradient ring */}
+            <circle cx="20" cy="20" r="18.5" stroke="url(#sb-ring)" strokeWidth="1.5" opacity="0.55"/>
+            {/* Subtle inner glow */}
+            <circle cx="20" cy="20" r="15" fill="url(#sb-bg)" opacity="0.07"/>
+            {/* Bar 1 — short */}
+            <rect x="7" y="25" width="5.5" height="8" rx="1.5" fill="url(#sb-b1)"/>
+            {/* Bar 2 — medium */}
+            <rect x="15" y="17" width="5.5" height="16" rx="1.5" fill="url(#sb-b2)"/>
+            {/* Bar 3 — tall */}
+            <rect x="23" y="9" width="5.5" height="24" rx="1.5" fill="url(#sb-b3)"/>
+            {/* Trend line over bars */}
+            <polyline
+              points="9.75,24 17.75,16 25.75,8"
+              stroke="#22d3ee"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {/* Glow at trend tip */}
+            <circle cx="25.75" cy="8" r="2.8" fill="#22d3ee" opacity="0.3"/>
+            <circle cx="25.75" cy="8" r="1.8" fill="#22d3ee"/>
+            <defs>
+              <linearGradient id="sb-ring" x1="2" y1="2" x2="38" y2="38" gradientUnits="userSpaceOnUse">
+                <stop stopColor="#3b82f6"/>
+                <stop offset="0.5" stopColor="#06b6d4"/>
+                <stop offset="1" stopColor="#818cf8"/>
+              </linearGradient>
+              <linearGradient id="sb-bg" x1="0" y1="0" x2="1" y2="1">
+                <stop stopColor="#3b82f6"/>
+                <stop offset="1" stopColor="#06b6d4"/>
+              </linearGradient>
+              <linearGradient id="sb-b1" x1="0" y1="0" x2="0" y2="1">
+                <stop stopColor="#60a5fa" stopOpacity="0.85"/>
+                <stop offset="1" stopColor="#1e40af" stopOpacity="0.4"/>
+              </linearGradient>
+              <linearGradient id="sb-b2" x1="0" y1="0" x2="0" y2="1">
+                <stop stopColor="#38bdf8"/>
+                <stop offset="1" stopColor="#0369a1" stopOpacity="0.55"/>
+              </linearGradient>
+              <linearGradient id="sb-b3" x1="0" y1="0" x2="0" y2="1">
+                <stop stopColor="#a78bfa"/>
+                <stop offset="1" stopColor="#4338ca" stopOpacity="0.6"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          {/* Animated live-pulse ring at trend tip (top-right) */}
+          <span className="absolute top-0 right-0 flex h-3 w-3">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-60" style={{animationDuration:'2s'}}/>
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-500/0"/>
+          </span>
+        </div>
         <div>
-          <div className="text-sm font-bold text-white leading-tight">RTA Monitor</div>
+          <div
+            className="text-sm font-bold leading-tight tracking-wide"
+            style={{
+              background: 'linear-gradient(90deg, #e2e8f0 0%, #93c5fd 60%, #67e8f9 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }}
+          >
+            RTA Monitor
+          </div>
           <div className="text-[10px] text-slate-500 uppercase tracking-widest">Real-Time Analyst</div>
         </div>
       </div>

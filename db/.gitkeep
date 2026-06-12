@@ -1,0 +1,2 @@
+# Keeps the db/ directory in git. Runtime files (history.db, live_state.json,
+# cms_agents.json) are gitignored and created automatically on first run.

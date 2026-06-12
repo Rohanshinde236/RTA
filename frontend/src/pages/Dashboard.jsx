@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { Play, Square, RotateCcw, AlertTriangle, ExternalLink, Monitor } from 'lucide-react'
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts'
 import { socket } from '../socket'
@@ -48,9 +48,11 @@ function RegionCard({ region, liveState, isRunning, configRegion, configSkillCou
   const slaValues  = liveSkills.map(s => s.sla).filter(x => x != null)
   const avgSla     = slaValues.length ? slaValues.reduce((a, b) => a + b, 0) / slaValues.length : null
   const worstSkill = hasLive ? [...liveSkills].sort((a, b) => (a.sla ?? 100) - (b.sla ?? 100))[0] : null
-  const liveBand   = worstSkill?.band || (avgSla != null
+  // Use avg SLA for the card badge band — prevents one SEVERE skill from painting
+  // the entire region red. The "Worst:" footer label still shows the troubled skill.
+  const liveBand   = avgSla != null
     ? (avgSla >= 95 ? 'EXCELLENT' : avgSla >= 90 ? 'HEALTHY' : avgSla >= 80 ? 'WARNING' : avgSla >= 70 ? 'CRITICAL' : 'SEVERE')
-    : null)
+    : (worstSkill?.band || null)
 
   // Badge logic — ONLY show live band when system is actually RUNNING
   //   stopped → always ACTIVE / INACTIVE from config (ignore stale live_state.json)
@@ -84,13 +86,26 @@ function RegionCard({ region, liveState, isRunning, configRegion, configSkillCou
   // Last poll time
   const pollTime = regionData?.last_poll_time
 
+  // Accent bar color based on band
+  const accentClass =
+    col.text === 'text-red-400'                      ? 'accent-red'   :
+    col.text === 'text-orange-400'                   ? 'accent-orange':
+    col.text === 'text-amber-400'                    ? 'accent-amber' :
+    (col.text === 'text-green-400' || col.text === 'text-emerald-400') ? 'accent-green' :
+    col.text === 'text-blue-400'                     ? 'accent-blue'  :
+    'accent-slate'
+
   return (
     <div className={`rta-card overflow-hidden animate-slide-in ${col.glow || ''}`}>
+      {/* Colored accent top bar */}
+      <div className={`accent-bar ${accentClass}`} />
       {/* Card header */}
       <div className="flex items-center justify-between px-5 pt-4 pb-3">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-[#111827] border border-[#1e3354] flex items-center justify-center text-xs font-bold text-slate-400">
-            {region.abbr}
+          {/* Flag badge — immersive region identifier */}
+          <div className="flag-badge w-9 h-9 rounded-xl flex items-center justify-center text-xl"
+            style={{background:'linear-gradient(135deg, rgba(30,51,84,0.55) 0%, rgba(13,21,38,0.75) 100%)', border:'1px solid rgba(59,130,246,0.18)'}}>
+            {region.flag}
           </div>
           <div>
             <div className="font-semibold text-white text-sm">{region.name}</div>
@@ -133,7 +148,7 @@ function RegionCard({ region, liveState, isRunning, configRegion, configSkillCou
               <LineChart data={sparkData}>
                 <Line
                   type="monotone" dataKey="v"
-                  stroke={liveBand === 'SEVERE' || liveBand === 'CRITICAL' ? '#ef4444' : '#10b981'}
+                  stroke={liveBand === 'SEVERE' ? '#ef4444' : liveBand === 'CRITICAL' ? '#fb923c' : liveBand === 'WARNING' ? '#f59e0b' : '#10b981'}
                   strokeWidth={2} dot={false}
                 />
                 <Tooltip
@@ -166,9 +181,16 @@ function RegionCard({ region, liveState, isRunning, configRegion, configSkillCou
                 ⚡ {leverCount} lever{leverCount > 1 ? 's' : ''}
               </span>
             )}
-            {worstSkill && (
-              <span className="text-slate-500 truncate">Worst: {worstSkill.skill} ({worstSkill.sla?.toFixed(1)}%)</span>
-            )}
+            {worstSkill && (() => {
+              const wc = bandColor(worstSkill.band)
+              const shortName = worstSkill.skill.replace(/^TS_[A-Z]+_/, '')
+              return (
+                <span className="flex items-center gap-1 min-w-0">
+                  <span className="text-slate-400 shrink-0">Worst:</span>
+                  <span className={`${wc.text} font-medium truncate`}>{shortName} ({worstSkill.sla?.toFixed(1)}%)</span>
+                </span>
+              )
+            })()}
           </div>
         )}
       </div>
@@ -272,12 +294,18 @@ export default function Dashboard() {
   const [configRegions,  setConfigRegions]  = useState([])
   const [skillRegionMap, setSkillRegionMap] = useState({})
 
+  // Track whether user has manually picked a mode — if so, don't let the 5s poll override it
+  const userSetMode = useRef(false)
+
   const fetchStatus = useCallback(async () => {
     try {
       const r = await fetch('/api/status')
       const d = await r.json()
       setStatus(d)
-      setMode(d.mode || 'full')
+      // Only sync selected mode from backend on initial load (before user touches the radio)
+      if (!userSetMode.current) {
+        setMode(d.mode || 'full')
+      }
     } catch {}
   }, [])
 
@@ -337,26 +365,32 @@ export default function Dashboard() {
           {lastUpdate && (
             <div className="text-xs text-slate-600">Updated {lastUpdate.toLocaleTimeString()}</div>
           )}
-          <a
-            href="/portal/cms"
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#111827] border border-[#1e3354] text-slate-300 hover:text-white hover:border-blue-500/40 text-sm transition-all"
-          >
-            <Monitor size={14} /> CMS Portal
-          </a>
         </div>
       </div>
 
       {/* System Status Card */}
-      <div className="rta-card p-5">
+      <div className={`rta-card p-5 relative overflow-hidden ${isRunning ? 'status-card-running' : 'status-card-stopped'}`}>
         <div className="flex flex-wrap items-center gap-6">
           <div className="flex items-center gap-3">
-            <div className={`relative flex items-center justify-center w-10 h-10 rounded-full ${isRunning ? 'bg-emerald-500/15' : 'bg-slate-700/30'}`}>
-              <span className={`w-3 h-3 rounded-full dot-blink ${isRunning ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+            {/* Radar-pulse indicator */}
+            <div className="relative flex items-center justify-center w-11 h-11">
+              {isRunning && <>
+                <span className="radar-ring" />
+                <span className="radar-ring radar-ring-2" />
+                <span className="radar-ring radar-ring-3" />
+              </>}
+              <div className={`relative z-10 w-11 h-11 rounded-full flex items-center justify-center
+                ${isRunning ? 'bg-emerald-500/15 border border-emerald-500/30' : 'bg-slate-700/30 border border-slate-600/30'}`}>
+                <span className={`w-3.5 h-3.5 rounded-full dot-blink
+                  ${isRunning
+                    ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]'
+                    : 'bg-slate-500'
+                  }`}
+                />
+              </div>
             </div>
             <div>
-              <div className={`text-sm font-bold ${isRunning ? 'text-emerald-400' : 'text-slate-400'}`}>
+              <div className={`text-sm font-bold tracking-wide ${isRunning ? 'text-emerald-400' : 'text-slate-400'}`}>
                 {isRunning ? 'RUNNING' : 'STOPPED'}
               </div>
               {isRunning && <div className="text-xs text-slate-500">{modeLabel}</div>}
@@ -364,40 +398,44 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4 px-4 border-l border-[#1e3354]">
+          <div className="flex items-center gap-3 px-4 border-l border-[#1e3354]">
             <span className="text-xs text-slate-500 font-medium uppercase tracking-wider">Mode</span>
-            {[
-              { val: 'full',   label: '📊 Scrape & Monitor', sub: 'alerts + levers' },
-              { val: 'scrape', label: '🔍 Scrape Only',       sub: 'data collection' },
-            ].map(opt => (
-              <label key={opt.val} className="flex items-center gap-2 cursor-pointer group">
-                <input
-                  type="radio" name="mode" value={opt.val}
-                  checked={selectedMode === opt.val}
-                  onChange={() => setMode(opt.val)}
-                  className="accent-blue-500"
-                />
-                <div>
-                  <div className="text-sm text-slate-300 group-hover:text-white transition-colors">{opt.label}</div>
-                  <div className="text-xs text-slate-600">{opt.sub}</div>
-                </div>
-              </label>
-            ))}
+            <div className="flex items-center gap-1 p-1 bg-[#080d1a] rounded-lg border border-[#1e3354]">
+              {[
+                { val: 'full',   label: '📊 Scrape & Monitor', sub: 'alerts + levers'  },
+                { val: 'scrape', label: '🔍 Scrape Only',       sub: 'data collection' },
+              ].map(opt => (
+                <button
+                  key={opt.val}
+                  onClick={() => { userSetMode.current = true; setMode(opt.val) }}
+                  disabled={isRunning}
+                  title={isRunning ? 'Stop the system to change mode' : opt.sub}
+                  className={`flex flex-col items-start px-3 py-1.5 rounded text-xs font-medium transition-all disabled:cursor-not-allowed
+                    ${selectedMode === opt.val
+                      ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
+                      : 'text-slate-500 hover:text-slate-300 border border-transparent'
+                    }`}
+                >
+                  <span>{opt.label}</span>
+                  <span className="text-[10px] font-normal opacity-60">{opt.sub}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 ml-auto">
+          <div className="flex items-center gap-2.5 ml-auto">
             <button onClick={() => doAction('start')} disabled={isRunning || !!loading}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-all">
+              className="btn-start flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold">
               <Play size={14} fill="currentColor" />
               {loading === 'start' ? 'Starting…' : 'Start'}
             </button>
             <button onClick={() => doAction('stop')} disabled={!isRunning || !!loading}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-all">
+              className="btn-stop flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold">
               <Square size={14} fill="currentColor" />
               {loading === 'stop' ? 'Stopping…' : 'Stop'}
             </button>
             <button onClick={() => doAction('restart')} disabled={!!loading}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-600 hover:bg-orange-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-all">
+              className="btn-restart flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold">
               <RotateCcw size={14} />
               {loading === 'restart' ? 'Restarting…' : 'Restart'}
             </button>
