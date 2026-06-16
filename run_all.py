@@ -22,16 +22,18 @@ if sys.platform == 'win32':
     import io
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+_log_dir   = os.path.join(script_dir, "log")
+os.makedirs(_log_dir, exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(threadName)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler('rta_v3.log', encoding='utf-8')
+        logging.FileHandler(os.path.join(_log_dir, 'rta_v3.log'), encoding='utf-8')
     ]
 )
 logger     = logging.getLogger(__name__)
-script_dir = os.path.dirname(os.path.abspath(__file__))
 
 load_dotenv(os.path.join(script_dir, 'config.env'), override=True)
 

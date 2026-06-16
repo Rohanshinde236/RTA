@@ -31,7 +31,10 @@ app.secret_key = "rta-monitor-secret-2026"
 socketio   = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet", logger=False, engineio_logger=False)
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 CFG_PATH   = os.path.join(BASE_DIR, "config.json")
-LOG_PATH   = os.path.join(BASE_DIR, "rta_v3.log")
+LOG_DIR    = os.path.join(BASE_DIR, "log")
+os.makedirs(LOG_DIR, exist_ok=True)
+LOG_PATH         = os.path.join(LOG_DIR, "rta_v3.log")
+STARTUP_LOG_PATH = os.path.join(LOG_DIR, "rta_startup.log")
 ENV_PATH   = os.path.join(BASE_DIR, "config.env")
 
 # Process handle for run_all.py
@@ -100,7 +103,7 @@ def start_system(mode: str = "full"):
             return False, "Already running"
         try:
             _run_mode = mode
-            err_log = open(os.path.join(BASE_DIR, "rta_startup.log"), "w", encoding="utf-8")
+            err_log = open(STARTUP_LOG_PATH, "w", encoding="utf-8")
 
             _process = subprocess.Popen(
                 [sys.executable, "-u", os.path.join(BASE_DIR, "run_all.py"), "--mode", mode],
@@ -145,7 +148,7 @@ def restart_system(mode: str = None):
 def _read_startup_log():
     """Also stream rta_startup.log into live logs."""
     import time
-    path = os.path.join(BASE_DIR, "rta_startup.log")
+    path = STARTUP_LOG_PATH
     last_pos = 0
     for _ in range(120):  # watch for 2 minutes
         try:
@@ -167,7 +170,7 @@ def _read_logs(proc):
     """Read from rta_v3.log file into _log_lines buffer."""
     global _log_lines
     import time
-    log_path = os.path.join(BASE_DIR, "rta_v3.log")
+    log_path = LOG_PATH
     last_pos = 0
     while proc.poll() is None:
         try:
@@ -1784,6 +1787,75 @@ def _call_llm_for_chat(question: str, context: str) -> str:
     return _call_llm_raw(prompt, max_tokens=1500, is_sql=False)
 
 
+import re as _re_intent
+
+# Words/patterns that mean the user is asking about the PAST (needs history DB).
+# Includes same-day-past-hours phrasing ("an hour ago", "at 11am", "earlier today").
+_PAST_PATTERNS = [
+    r'\byesterday\b', r'\blast night\b', r'\bearlier\b', r'\bago\b',
+    r'\bprevious(ly)?\b', r'\bprior\b', r'\bpast\b', r'\bhistor(y|ical)\b',
+    r'\bover the (day|week|month|hour)\b', r'\bsince\b', r'\btrend(s|ing|ed)?\b',
+    r'\bused to\b', r'\bback then\b', r'\bso far today\b',
+    r'\bthis morning\b', r'\bthis afternoon\b', r'\bearlier today\b',
+    r'\blast (week|month|hour|\d+\s*(hours?|hrs?|days?|minutes?|mins?))\b',
+    r'\b(was|were|had|did)\b',                       # past-tense verbs
+    r'\bat \d{1,2}\s*(?::\d{2})?\s*(am|pm)\b',        # "at 11am", "at 9:30 pm"
+    r'\b\d+\s*(hours?|hrs?|minutes?|mins?|days?)\s+ago\b',
+    r'\b(mon|tues|wednes|thurs|fri|satur|sun)day\b',  # day names
+    r'\b\d{4}-\d{2}-\d{2}\b',                          # ISO date
+]
+
+# Words/patterns that mean the user is asking about the PRESENT (live data only).
+_PRESENT_PATTERNS = [
+    r'\b(right )?now\b', r'\bcurrent(ly)?\b', r'\blive\b',
+    r'\bat (the |this )?moment\b', r'\bas of now\b', r'\bat present\b',
+    r'\bat the moment\b', r'\bthis (second|instant)\b',
+]
+
+
+def _detect_temporal_intent(question: str) -> str:
+    """
+    Classify whether a question is about the past, the present, or neither.
+    Used to route the chatbot: live mode can't answer past questions, and
+    history mode can't answer live ones. Returns 'past' | 'present' | 'neutral'.
+    Past signals win ties (e.g. "what was the SLA right now" → past).
+    """
+    q = (question or "").lower()
+    if any(_re_intent.search(p, q) for p in _PAST_PATTERNS):
+        return "past"
+    if any(_re_intent.search(p, q) for p in _PRESENT_PATTERNS):
+        return "present"
+    return "neutral"
+
+
+def _suggest_followups(question: str, mode: str) -> list:
+    """
+    Generate up to 3 deeper follow-up questions for the given question/mode.
+    Best-effort — returns [] on any failure so it never blocks the answer.
+    """
+    try:
+        from core.prompt_loader import load_prompt
+        mode_desc = ("answers from current real-time dashboard data only"
+                     if mode == "live"
+                     else "answers from the 7-day historical SQLite database")
+        prompt = load_prompt("chatbot_suggest", mode=mode, mode_desc=mode_desc,
+                             question=question)
+        raw = _call_llm_raw(prompt, max_tokens=120, is_sql=True)
+        if not raw or raw.startswith("⚠️"):
+            return []
+        out = []
+        for line in raw.splitlines():
+            # Strip leading numbering / bullets / quotes the model may add
+            line = _re_intent.sub(r'^\s*(\d+[\.\)]|[-*•])\s*', '', line).strip()
+            line = line.strip('"').strip("'").strip()
+            if line and len(line) > 5:
+                out.append(line)
+        return out[:3]
+    except Exception as e:
+        logger.warning(f"suggestion generation failed: {e}")
+        return []
+
+
 @app.route("/legacy/chat")
 def chat_page():
     return render_template_string(
@@ -2001,6 +2073,50 @@ def api_agents():
     return jsonify({"ok": True})
 
 
+@app.route("/api/cms_agents")
+def api_cms_agents():
+    """Return cms_agents.json enriched with per-agent breach flags."""
+    raw = _load_cms_agents()
+    if not raw:
+        return jsonify({})
+
+    cfg            = load_cfg()
+    aux_thresholds = cfg.get("agent4", {}).get("aux_thresholds", {})
+    acw_target_min = cfg.get("agent4", {}).get("acw_target_min", 5)
+    a4_aht_global  = cfg.get("agent4", {}).get("aht_target_min", 0)
+    skill_thresh   = cfg.get("skill_thresholds", {})
+
+    result = {}
+    for region_tag, skills_data in raw.items():
+        result[region_tag] = {}
+        for skill_name, agents in skills_data.items():
+            sk_cfg         = skill_thresh.get(skill_name, {})
+            aht_target_min = sk_cfg.get("aht_target_min") or a4_aht_global or 24
+            aht_breach_min = aht_target_min * 1.10
+
+            enriched = []
+            for a in agents:
+                d     = dict(a)
+                state = a.get("state", "")
+                t_min = a.get("time_minutes", 0)
+                d["breach"] = False
+
+                if state == "AUX":
+                    ax_cfg   = aux_thresholds.get(a.get("aux_key", ""), {})
+                    max_time = ax_cfg.get("max_time_min", 0)
+                    if ax_cfg.get("enabled", False) and max_time > 0 and t_min > max_time:
+                        d["breach"] = True
+                elif state == "ACD" and aht_breach_min > 0 and t_min > aht_breach_min:
+                    d["breach"] = True
+                elif state == "ACW" and acw_target_min > 0 and t_min > acw_target_min:
+                    d["breach"] = True
+
+                enriched.append(d)
+            result[region_tag][skill_name] = enriched
+
+    return jsonify(result)
+
+
 @app.route("/api/skills", methods=["GET", "POST"])
 def api_skills():
     cfg = load_cfg()
@@ -2067,17 +2183,44 @@ def api_chat():
     question = (data.get("question") or "").strip()
     mode     = data.get("mode", "live")
     if not question:
-        return jsonify({"answer": "Please enter a question."})
+        return jsonify({"answer": "Please enter a question.", "suggestions": []})
+
+    intent = _detect_temporal_intent(question)
+
+    # ── Live mode + question about the past → don't guess, send them to History ──
+    if mode == "live" and intent == "past":
+        answer = (
+            "🕑 That looks like a question about **past data**, but I'm in **Live mode** — "
+            "I only have the current poll, not history.\n\n"
+            "👉 Switch to **History mode** (toggle at the top-right) and ask again to get accurate "
+            "past data."
+        )
+        return jsonify({
+            "answer": answer,
+            "suggestions": _suggest_followups(question, "history"),
+            "notice": "switch_to_history",
+        })
 
     if mode == "history":
         context = _build_history_context(question)
+        answer  = _call_llm_for_chat(question, context)
+        # ── History mode + question about the live/current situation → caveat ────
+        if intent == "present":
+            answer = (
+                "⚠️ I don't have **current live data** in History mode, so this may not reflect "
+                "the real-time situation — but based on the **latest available past data**, this "
+                "may help:\n\n" + answer
+            )
     else:
         live_state = _load_live_state()
         cms_agents = _load_cms_agents()
         context    = _build_context(question, live_state, cms_agents)
+        answer     = _call_llm_for_chat(question, context)
 
-    answer = _call_llm_for_chat(question, context)
-    return jsonify({"answer": answer})
+    return jsonify({
+        "answer": answer,
+        "suggestions": _suggest_followups(question, mode),
+    })
 
 
 # ── SocketIO events ────────────────────────────────────────────────────────────

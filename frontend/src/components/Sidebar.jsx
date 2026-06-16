@@ -1,16 +1,17 @@
 import { NavLink } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import {
-  LayoutDashboard, Globe, Settings, List, ScrollText, MessageSquare, Monitor, Sun, Moon
+  LayoutDashboard, Globe, Settings, List, Timer, ScrollText, MessageSquare, Monitor, Sun, Moon
 } from 'lucide-react'
 
 const NAV = [
-  { to: '/',               icon: LayoutDashboard, label: 'Dashboard'        },
-  { to: '/regions',        icon: Globe,           label: 'Regions'          },
-  { to: '/agent-settings', icon: Settings,        label: 'Agent Settings'   },
-  { to: '/thresholds',     icon: List,            label: 'Skill Thresholds' },
-  { to: '/logs',           icon: ScrollText,      label: 'Live Logs'        },
-  { to: '/chatbot',        icon: MessageSquare,   label: 'Chatbot'          },
+  { to: '/',                icon: LayoutDashboard, label: 'Dashboard'        },
+  { to: '/regions',         icon: Globe,           label: 'Regions'          },
+  { to: '/agent-settings',  icon: Settings,        label: 'Agent Settings'   },
+  { to: '/thresholds',      icon: List,            label: 'Skill Thresholds' },
+  { to: '/aux-thresholds',  icon: Timer,           label: 'AUX Thresholds'   },
+  { to: '/logs',            icon: ScrollText,      label: 'Live Logs'        },
+  { to: '/chatbot',         icon: MessageSquare,   label: 'Chatbot'          },
 ]
 
 export default function Sidebar() {

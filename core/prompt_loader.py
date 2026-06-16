@@ -82,7 +82,7 @@ def _load_rules() -> str:
 
 def load_prompt(name: str, **kwargs) -> str:
     """
-    Load a prompt template from prompts/<name>.txt and fill in variables.
+    Load a prompt template from prompts/<name>.md and fill in variables.
     If the template contains {rules}, the YAML rulebook is injected automatically.
 
     Args:
@@ -93,7 +93,7 @@ def load_prompt(name: str, **kwargs) -> str:
         Filled prompt string ready to send to LLM.
     """
     if name not in _cache:
-        path = os.path.join(_PROMPTS_DIR, f"{name}.txt")
+        path = os.path.join(_PROMPTS_DIR, f"{name}.md")
         if not os.path.exists(path):
             raise FileNotFoundError(f"Prompt file not found: {path}")
         with open(path, "r", encoding="utf-8") as f:
@@ -115,5 +115,5 @@ def load_prompt(name: str, **kwargs) -> str:
 
 
 def clear_cache():
-    """Clear the in-memory prompt cache — call after editing rules.yaml or any .txt prompt."""
+    """Clear the in-memory prompt cache — call after editing rules.yaml or any .md prompt."""
     _cache.clear()

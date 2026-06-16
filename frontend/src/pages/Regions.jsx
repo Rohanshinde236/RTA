@@ -46,7 +46,7 @@ export default function Regions() {
             + Add Region
           </button>
           <button onClick={save} disabled={saving}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium">
+            className="flex items-center gap-2 px-4 py-2 rounded-xl btn-save text-white text-sm font-semibold">
             <Save size={14}/> {saving ? 'Saving…' : '💾 Save Regions'}
           </button>
         </div>
@@ -130,7 +130,7 @@ export default function Regions() {
 
       <div className="flex gap-3">
         <button onClick={save} disabled={saving}
-          className="flex items-center gap-2 px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium">
+          className="flex items-center gap-2 px-5 py-2 rounded-xl btn-save text-white text-sm font-semibold">
           <Save size={14}/> {saving ? 'Saving…' : '💾 Save Regions'}
         </button>
         <button onClick={() => fetch('/api/regions').then(r=>r.json()).then(d=>setRegions(d.regions||[]))}

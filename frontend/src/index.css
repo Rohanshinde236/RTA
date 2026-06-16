@@ -147,7 +147,19 @@ body {
   box-shadow: 0 6px 20px rgba(234,88,12,0.52), inset 0 1px 0 rgba(255,255,255,0.15);
   transform: translateY(-1px);
 }
-.btn-start:disabled, .btn-stop:disabled, .btn-restart:disabled {
+.btn-save {
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+  box-shadow: 0 4px 14px rgba(37,99,235,0.38), inset 0 1px 0 rgba(255,255,255,0.12);
+  border: 1px solid rgba(96,165,250,0.45);
+  color: #fff;
+  transition: all 0.2s;
+}
+.btn-save:hover:not(:disabled) {
+  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
+  box-shadow: 0 6px 20px rgba(37,99,235,0.52), inset 0 1px 0 rgba(255,255,255,0.15);
+  transform: translateY(-1px);
+}
+.btn-start:disabled, .btn-stop:disabled, .btn-restart:disabled, .btn-save:disabled {
   opacity: 0.38;
   cursor: not-allowed;
   transform: none !important;

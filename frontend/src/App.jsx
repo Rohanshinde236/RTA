@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard'
 import Regions from './pages/Regions'
 import AgentSettings from './pages/AgentSettings'
 import SkillThresholds from './pages/SkillThresholds'
+import AuxThresholds from './pages/AuxThresholds'
 import LiveLogs from './pages/LiveLogs'
 import Chatbot from './pages/Chatbot'
 
@@ -18,6 +19,7 @@ export default function App() {
             <Route path="/regions"         element={<Regions />} />
             <Route path="/agent-settings"  element={<AgentSettings />} />
             <Route path="/thresholds"      element={<SkillThresholds />} />
+            <Route path="/aux-thresholds"  element={<AuxThresholds />} />
             <Route path="/logs"            element={<LiveLogs />} />
             <Route path="/chatbot"         element={<Chatbot />} />
             <Route path="*"               element={<Navigate to="/" replace />} />

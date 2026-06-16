@@ -122,7 +122,9 @@ def _get_aux_reference() -> str:
         elif code == "AUX6":
             lines.append(
                 f"{aux_label:<30} → ASK POLITELY only — never force move\n"
-                f"{'':30}   Message: \"[Name] is on {name}, can you please jump to calls?\""
+                f"{'':30}   Use the agent's ACTUAL NAME from the table above.\n"
+                f"{'':30}   Message format: \"<actual_agent_name> is on {name}, can you please jump to calls?\"\n"
+                f"{'':30}   Example: \"Sharma_D is on {name}, can you please jump to calls?\""
             )
         else:
             lines.append(
@@ -254,29 +256,41 @@ def _send_teams_text(webhook, text):
 
 def _get_cms_collector(tag, dashboard_path):
     """
-    Return a cached CMS collector for this region.
-    Stored in sys.modules under rta_cms_inst_{tag}.
+    Return the single global CMS collector shared across all regions.
+    All regions use the same ui/CMS.html — no need for 10 separate browsers.
+    One browser + one BG thread handles all regions sequentially via queue.
+
+    Previously: 10 per-region collectors → 10 Chromium instances → resource
+    exhaustion → BG thread timeouts + sync-mode "page not initialized" errors.
+    Now: 1 collector → 1 browser → no startup race under load.
     """
     cms_file = os.path.join(_ROOT, "dashboard", "cms_collector.py")
-    cms_path = os.path.join(os.path.dirname(dashboard_path), 'CMS.html') \
-               if dashboard_path else os.path.join(_ROOT, 'ui', 'CMS.html')
+    cms_path = os.path.join(_ROOT, 'ui', 'CMS.html')
 
-    inst_key = f"rta_cms_inst_{tag}"
+    inst_key = "__rta_cms_inst_global__"
     if inst_key in sys.modules:
         return sys.modules[inst_key]
 
-    try:
-        mod_key = f"rta_cms_mod_{tag}"
-        if mod_key in sys.modules:
-            del sys.modules[mod_key]
-        cms_mod = _load_file(mod_key, cms_file)
-        collector = cms_mod.CMSCollector(cms_path)
-        sys.modules[inst_key] = collector
-        logger.info(f"[{tag}] CMS collector created — {cms_path}")
-        return collector
-    except Exception as e:
-        logger.warning(f"[{tag}] CMS collector init failed — {e}")
-        return None
+    # Double-checked locking — prevents 10 regions racing to create separate collectors
+    lock_key = "__rta_cms_create_lock__"
+    if lock_key not in sys.modules:
+        sys.modules[lock_key] = threading.Lock()
+
+    with sys.modules[lock_key]:
+        if inst_key in sys.modules:
+            return sys.modules[inst_key]
+        try:
+            mod_key = "__rta_cms_mod_global__"
+            if mod_key in sys.modules:
+                del sys.modules[mod_key]
+            cms_mod = _load_file(mod_key, cms_file)
+            collector = cms_mod.CMSCollector(cms_path)
+            sys.modules[inst_key] = collector
+            logger.info("Global CMS collector created — shared across all regions.")
+            return collector
+        except Exception as e:
+            logger.warning(f"Global CMS collector init failed: {e}")
+            return None
 
 
 # ── agent table builder (for LLM prompt) ─────────────────────────────────────
@@ -373,7 +387,10 @@ def _build_teams_message(region, skill_name, metric, result):
             if note_txt:
                 lines.append(f"   {note_txt}")
     else:
-        lines.append("⚠️ No AUX agents available to move")
+        if not ask_list:
+            # Truly no AUX agents at all
+            lines.append("⚠️ No AUX agents available to move")
+        # If ask_list is non-empty, Case Mgmt agents exist — don't say "no AUX agents"
 
     # ── Polite ask ────────────────────────────────────────────────────────────
     if ask_list:
@@ -580,11 +597,17 @@ def _fallback(skill_name, metric, agents, breach_reasons):
                 "reason_to_hold": f"Only {int(time_min)} min into {aux_name} — under {max_min} min limit",
             })
 
-    sla  = metric.service_level if metric else 0
-    band = metric.band if metric else ''
+    sla     = metric.service_level if metric else 0
+    band    = metric.band if metric else ''
+    on_aux  = metric.agents_on_aux if metric else 0
+    avail   = metric.agents_available if metric else 0
+
+    # CMS returned nothing but live scrape shows AUX agents — data gap
+    no_cms_data = not agents and on_aux > 0
+
     return {
         "skill":      skill_name,
-        "root_cause": "AUX_HEAVY" if metric and metric.agents_on_aux > 0 else "STAFFING",
+        "root_cause": "AUX_HEAVY" if on_aux > 0 else "STAFFING",
         "move_list":  move_list,
         "hold_list":  hold_list,
         "ask_list":   ask_list,
@@ -594,7 +617,10 @@ def _fallback(skill_name, metric, agents, breach_reasons):
         ),
         "analyst_note": (
             f"SLA at {sla:.1f}% ({band}). {queue} calls waiting. "
-            f"{metric.agents_on_aux if metric else 0} on AUX."
+            f"CMS data unavailable — {on_aux} agent(s) on AUX but names unknown. Escalate to supervisor."
+            if no_cms_data else
+            f"SLA at {sla:.1f}% ({band}). {queue} calls waiting. "
+            f"{on_aux} on AUX. Avail: {avail}."
         ),
     }
 
@@ -678,6 +704,16 @@ def _sanitise_result(result: dict, agents: list) -> dict:
         val = result.get(key, '')
         if val:
             result[key] = val.strip().rstrip(_junk).strip()
+
+    # ── Step 4: remove ask_list entries with unresolved LLM placeholders ─────
+    # LLM sometimes copies the template example literally ([Name], <agent_name>)
+    # instead of substituting real names — strip these to avoid confusing output.
+    _PLACEHOLDERS = {'[Name]', '<actual_agent_name>', '<agent_name>', '[agent_name]'}
+    ask_list = [
+        a for a in ask_list
+        if a.get('name', '') not in _PLACEHOLDERS
+        and not any(p in a.get('message', '') for p in _PLACEHOLDERS)
+    ]
 
     result['move_list'] = valid_move
     result['ask_list']  = ask_list
@@ -797,17 +833,30 @@ def agent2_analyst(state: dict) -> dict:
         with _LLM_LOCK:
             logger.info(f"[{region_name}] LLM lock acquired — {skill_name}")
             # LLM enabled check from config
-        if not _get_a2_config().get("llm_enabled", True):
+
+        # Skip LLM when CMS returned no agents — LLM has no names to work with
+        # and will hallucinate placeholders like [Name]. Fallback handles this cleanly.
+        _llm_skipped = False
+        if not agents:
+            on_aux = metric.agents_on_aux if metric else 0
+            logger.info(
+                f"[{region_name}] No CMS data for {skill_name} "
+                f"(metric shows {on_aux} on AUX) — using fallback directly"
+            )
+            result = None
+            _llm_skipped = True
+        elif not _get_a2_config().get("llm_enabled", True):
             logger.info(f"[{region_name}] LLM disabled in config — using fallback")
             result = None
+            _llm_skipped = True
         else:
             result = _call_llm_for_skill(_llm, prompt, skill_name, region_name)
 
-        # 4. Fallback if LLM failed
+        # 4. Fallback if LLM failed or was skipped
         if not result:
-            logger.warning(
-                f"[{region_name}] Using fallback for {skill_name}"
-            )
+            if not _llm_skipped:
+                # LLM was called but failed — this is unexpected
+                logger.warning(f"[{region_name}] LLM failed for {skill_name} — using fallback")
             result = _fallback(skill_name, metric, agents, breach_reasons)
 
         # 4b. Sanitise — deduplicate agents, validate move times, strip junk
@@ -840,12 +889,12 @@ def agent2_analyst(state: dict) -> dict:
 
 # ── cleanup ───────────────────────────────────────────────────────────────────
 
-def cleanup_cms(region_name: str):
-    key = f"rta_cms_inst_{region_name.lower()}"
+def cleanup_cms(region_name: str = None):
+    key = "__rta_cms_inst_global__"
     if key in sys.modules:
         try:
             sys.modules[key].cleanup()
-            logger.info(f"[{region_name}] CMS browser closed.")
+            logger.info("Global CMS browser closed.")
         except Exception:
             pass
         del sys.modules[key]

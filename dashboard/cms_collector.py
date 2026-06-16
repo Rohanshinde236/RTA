@@ -65,12 +65,12 @@ class CMSCollector:
         self._init_playwright()
 
     def _init_playwright(self):
-        if _is_asyncio_running():
-            logger.info("CMSCollector: asyncio loop detected — using background thread for Playwright.")
-            self._use_thread = True
-            self._start_bg_thread()
-        else:
-            self._init_sync()
+        # Always use background thread.
+        # sync_playwright() raises inside eventlet/asyncio (used by Flask-SocketIO),
+        # and _is_asyncio_running() was unreliable across threads — some regions
+        # fell through to sync mode and got "page not initialized". BG thread is safe everywhere.
+        self._use_thread = True
+        self._start_bg_thread()
 
     def _init_sync(self):
         try:
@@ -149,6 +149,14 @@ class CMSCollector:
                     pass
                 break
 
+            # ── Startup handshake echo ────────────────────────────────────────
+            # Race: BG thread puts "READY" then races through page.goto() and
+            # enters this loop before _start_bg_thread consumes "READY" from the
+            # shared queue. Safe to discard — _start_bg_thread will time out on
+            # its own .get() but the thread is running fine.
+            if item == "READY":
+                continue
+
             # ── Validate item format ──────────────────────────────────────────
             # Must be a tuple of exactly (skill_name: str, result_q: Queue)
             if not isinstance(item, tuple) or len(item) != 2:
@@ -192,15 +200,31 @@ class CMSCollector:
         try:
             # Wait for selector to be ready before selecting
             page.wait_for_selector('#skill-select', timeout=8000)
-            page.select_option('#skill-select', skill_name)
-            page.wait_for_timeout(600)
+            # Set value + explicitly call render() in one atomic JS call.
+            # Avoids two failure modes with select_option + change event:
+            #   1. Same skill selected twice → change event doesn't fire → stale tbody
+            #   2. Event fires but 600ms static wait races against JS execution
+            page.evaluate(
+                "(skillName) => { "
+                "  document.getElementById('skill-select').value = skillName; "
+                "  if (typeof render === 'function') render(); "
+                "}",
+                skill_name
+            )
+            page.wait_for_timeout(300)
         except Exception as e:
-            logger.warning(f"CMSCollector: #skill-select not ready for {skill_name} — reloading page")
+            logger.warning(f"CMSCollector: skill select failed for {skill_name} — reloading page: {e}")
             try:
                 page.goto(self._get_url(), wait_until="domcontentloaded", timeout=15000)
                 page.wait_for_selector('#skill-select', timeout=8000)
-                page.select_option('#skill-select', skill_name)
-                page.wait_for_timeout(600)
+                page.evaluate(
+                    "(skillName) => { "
+                    "  document.getElementById('skill-select').value = skillName; "
+                    "  if (typeof render === 'function') render(); "
+                    "}",
+                    skill_name
+                )
+                page.wait_for_timeout(300)
             except Exception as e2:
                 logger.error(f"CMSCollector: skill select failed after reload for {skill_name}: {e2}")
                 return []

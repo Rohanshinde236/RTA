@@ -6,7 +6,7 @@ const {
 const fs = require('fs');
 const path = require('path');
 
-const OUT = path.join(__dirname, '..');
+const OUT = path.join(__dirname, '..', 'documents');
 
 // ── Shared styles ─────────────────────────────────────────────────────────────
 const STYLES = {

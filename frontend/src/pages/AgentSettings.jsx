@@ -117,7 +117,7 @@ export default function AgentSettings() {
           {saved  && <span className="flex items-center gap-1.5 text-emerald-400 text-sm"><CheckCircle size={14}/> Saved — restart to apply</span>}
           {error  && <span className="text-red-400 text-sm">{error}</span>}
           <button onClick={save} disabled={saving}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium">
+            className="flex items-center gap-2 px-4 py-2 rounded-xl btn-save text-white text-sm font-semibold">
             <Save size={14}/> {saving ? 'Saving…' : '💾 Save Agent Settings'}
           </button>
         </div>
@@ -240,7 +240,7 @@ export default function AgentSettings() {
         {/* Save */}
         <div className="flex gap-3 mt-6">
           <button onClick={save} disabled={saving}
-            className="flex items-center gap-2 px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium">
+            className="flex items-center gap-2 px-5 py-2 rounded-xl btn-save text-white text-sm font-semibold">
             <Save size={14}/> {saving ? 'Saving…' : '💾 Save Agent Settings'}
           </button>
           <button onClick={() => fetch('/api/agents').then(r=>r.json()).then(d=>{ setA1(d.agent1||{}); setA2(d.agent2||{}); setA3(d.agent3||{}); setA4(d.agent4||{}) })}

@@ -1,27 +1,14 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { Play, Square, RotateCcw, AlertTriangle, ExternalLink, Monitor } from 'lucide-react'
+import { Play, Square, RotateCcw, AlertTriangle, ExternalLink } from 'lucide-react'
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts'
 import { socket } from '../socket'
+import { REGIONS } from '../regions'
 
-// live_state.json keys: "rta", "cn", "au", "emea", "hk", "my", "kr", "th", "br", "tw"
 // SKILL_REGION_MAP values: "APJ-IN", "APJ-CN", "APJ-AU", "EMEA", "APJ-HK", "APJ-MY", "APJ-KR", "APJ-TH", "LATAM-BR", "APJ-TW"
 const TAG_TO_APJ = {
   rta: 'APJ-IN', cn: 'APJ-CN', au: 'APJ-AU', emea: 'EMEA',
   hk: 'APJ-HK', my: 'APJ-MY', kr: 'APJ-KR', th: 'APJ-TH', br: 'LATAM-BR', tw: 'APJ-TW',
 }
-
-const REGIONS = [
-  { tag: 'rta',  name: 'India',     flag: '🇮🇳', abbr: 'IN', portalUrl: '/portal/rta'  },
-  { tag: 'cn',   name: 'China',     flag: '🇨🇳', abbr: 'CN', portalUrl: '/portal/cn'   },
-  { tag: 'au',   name: 'Australia', flag: '🇦🇺', abbr: 'AU', portalUrl: '/portal/au'   },
-  { tag: 'emea', name: 'EMEA',      flag: '🌍',  abbr: 'EM', portalUrl: '/portal/emea' },
-  { tag: 'hk',   name: 'Hong Kong', flag: '🇭🇰', abbr: 'HK', portalUrl: '/portal/hk'   },
-  { tag: 'my',   name: 'Malaysia',  flag: '🇲🇾', abbr: 'MY', portalUrl: '/portal/my'   },
-  { tag: 'kr',   name: 'Korea',     flag: '🇰🇷', abbr: 'KR', portalUrl: '/portal/kr'   },
-  { tag: 'th',   name: 'Thailand',  flag: '🇹🇭', abbr: 'TH', portalUrl: '/portal/th'   },
-  { tag: 'br',   name: 'Brazil',    flag: '🇧🇷', abbr: 'BR', portalUrl: '/portal/br'   },
-  { tag: 'tw',   name: 'Taiwan',    flag: '🇹🇼', abbr: 'TW', portalUrl: '/portal/tw'   },
-]
 
 function bandColor(band) {
   if (!band) return { text: 'text-slate-400', bg: 'bg-slate-700/40', border: 'border-slate-600' }

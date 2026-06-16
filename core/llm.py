@@ -10,32 +10,31 @@ load_dotenv("config.env", override=True)
 # ─── Build unified key pool ────────────────────────────────────
 # Each entry: (provider, api_key, model)
 # Order matters — pool is cycled round-robin.
-# NVIDIA goes FIRST (primary for lever analysis — powerful 70B model).
-# Groq goes SECOND (fast fallback if NVIDIA keys exhausted).
-# Gemini goes LAST (secondary fallback).
+# ── TEMPORARY: Groq only ──────────────────────────────────────
+# To re-enable NVIDIA/Gemini, uncomment those blocks below.
 _key_pool = []
 
-# ── NVIDIA keys (primary for lever/agent LLM calls) ───────────
-nvidia_model    = os.getenv("NVIDIA_MODEL",    "meta/llama-3.3-70b-instruct")
-nvidia_base_url = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
-for i in range(1, 10):  # supports up to 9 NVIDIA keys
-    k = os.getenv(f"NVIDIA_API_KEY_{i}")
-    if k and k.strip():
-        _key_pool.append(("nvidia", k.strip(), nvidia_model))
+# ── NVIDIA keys — disabled temporarily ───────────────────────
+# nvidia_model    = os.getenv("NVIDIA_MODEL",    "meta/llama-3.3-70b-instruct")
+# nvidia_base_url = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+# for i in range(1, 10):
+#     k = os.getenv(f"NVIDIA_API_KEY_{i}")
+#     if k and k.strip():
+#         _key_pool.append(("nvidia", k.strip(), nvidia_model))
 
-# ── Groq keys (fallback) ──────────────────────────────────────
+# ── Groq keys (active) ────────────────────────────────────────
 groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 for i in range(1, 10):  # supports up to 9 Groq keys
     k = os.getenv(f"GROQ_API_KEY_{i}")
     if k and k.strip() and not k.strip().startswith("gsk_..."):
         _key_pool.append(("groq", k.strip(), groq_model))
 
-# ── Gemini keys (last-resort fallback) ────────────────────────
-gemini_model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-for i in range(1, 10):  # supports up to 9 Gemini keys
-    k = os.getenv(f"GEMINI_API_KEY_{i}")
-    if k and k.strip():
-        _key_pool.append(("gemini", k.strip(), gemini_model))
+# ── Gemini keys — disabled temporarily ───────────────────────
+# gemini_model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+# for i in range(1, 10):
+#     k = os.getenv(f"GEMINI_API_KEY_{i}")
+#     if k and k.strip():
+#         _key_pool.append(("gemini", k.strip(), gemini_model))
 
 if not _key_pool:
     raise RuntimeError("No LLM API keys found in config.env")

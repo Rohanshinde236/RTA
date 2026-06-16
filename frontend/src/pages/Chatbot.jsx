@@ -119,7 +119,11 @@ export default function Chatbot() {
         body: JSON.stringify({ question: q, mode }),
       })
       const d = await r.json()
-      setMessages(m => [...m, { role: 'bot', content: d.answer || d.error || 'No response' }])
+      setMessages(m => [...m, {
+        role: 'bot',
+        content: d.answer || d.error || 'No response',
+        suggestions: Array.isArray(d.suggestions) ? d.suggestions : [],
+      }])
     } catch (e) {
       setMessages(m => [...m, { role: 'bot', content: `Error: ${e.message}` }])
     } finally { setLoading(false) }
@@ -193,6 +197,29 @@ export default function Chatbot() {
         )}
 
         {messages.map((m, i) => <Message key={i} msg={m} />)}
+
+        {/* Follow-up suggestions under the latest bot answer (ChatGPT-style) */}
+        {!loading && messages.length > 0 && (() => {
+          const last = messages[messages.length - 1]
+          if (last.role !== 'bot' || !last.suggestions?.length) return null
+          return (
+            <div className="flex flex-col gap-1.5 mb-4 ml-9 animate-slide-in">
+              <span className="text-[10px] uppercase tracking-wider text-slate-600 mb-0.5">Dig deeper</span>
+              <div className="flex flex-wrap gap-2">
+                {last.suggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    onClick={() => send(s)}
+                    className="text-left text-xs px-3 py-1.5 rounded-full bg-[#111827] border border-[#1e3354] text-slate-400 hover:border-blue-500/40 hover:text-slate-200 transition-all"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
+
         {loading && (
           <div className="flex justify-start mb-4">
             <div className="w-7 h-7 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center mr-2 mt-1">
