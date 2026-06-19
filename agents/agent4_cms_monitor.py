@@ -584,6 +584,44 @@ def agent4_monitor(webhook: str, region_name: str, cms_collector, skills: list,
     return all_alerts
 
 
+# ── Shared CMS collector ──────────────────────────────────────────────────────
+
+def _get_cms_collector():
+    """
+    Return the SINGLE global CMS collector shared across all regions (and Agent 2).
+    All regions read the same ui/CMS.html, so one browser + one background thread
+    serves every region's requests through its internal queue.
+
+    Previously each region's Agent 4 created its own CMSCollector → up to 10
+    Chromium browsers launching at once → some background threads timed out and
+    fell back to sync mode with no page → "CMSCollector: page not initialized".
+    Sharing one collector (same sys.modules key Agent 2 uses) removes that race.
+    """
+    inst_key = "__rta_cms_inst_global__"
+    if inst_key in sys.modules:
+        return sys.modules[inst_key]
+
+    lock_key = "__rta_cms_create_lock__"
+    if lock_key not in sys.modules:
+        sys.modules[lock_key] = threading.Lock()
+
+    with sys.modules[lock_key]:
+        if inst_key in sys.modules:               # double-checked under lock
+            return sys.modules[inst_key]
+        cms_file = os.path.join(_ROOT, "dashboard", "cms_collector.py")
+        cms_path = os.path.join(_ROOT, "ui", "CMS.html")
+        mod_key  = "__rta_cms_mod_global__"
+        if mod_key in sys.modules:
+            del sys.modules[mod_key]
+        spec    = importlib.util.spec_from_file_location(mod_key, cms_file)
+        cms_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cms_mod)
+        collector = cms_mod.CMSCollector(cms_path)
+        sys.modules[inst_key] = collector
+        logger.info("A4: Global CMS collector created — shared across all regions.")
+        return collector
+
+
 # ── Background loop ───────────────────────────────────────────────────────────
 
 def agent4_monitor_loop(webhook: str, region_name: str, dashboard_path: str,
@@ -591,7 +629,8 @@ def agent4_monitor_loop(webhook: str, region_name: str, dashboard_path: str,
     """
     Permanent background thread for Agent 4.
     Runs every POLL_INTERVAL_SEC seconds.
-    Creates its own CMS browser — does NOT share A2's browser.
+    Uses the single shared global CMS browser (same one Agent 2 uses) — one
+    browser for all regions avoids the multi-Chromium startup race.
     initial_delay_sec: stagger offset so all 10 regions don't fire simultaneously.
     """
     if tag is None:
@@ -607,22 +646,11 @@ def agent4_monitor_loop(webhook: str, region_name: str, dashboard_path: str,
     skills = SKILLS_BY_REGION.get(tag, ALL_SKILLS)
     logger.info(f"A4 [{region_name}]: Monitoring {len(skills)} skills: {skills}")
 
-    # Load CMS collector
-    cms_collector = None
+    # Use the single shared global CMS collector (one browser for all regions) —
+    # avoids the per-region Chromium startup race that caused "page not initialized".
     try:
-        cms_file = os.path.join(_ROOT, "dashboard", "cms_collector.py")
-        mod_key  = f"rta_cms_mod_a4_{tag}"
-        spec     = importlib.util.spec_from_file_location(mod_key, cms_file)
-        mod      = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-
-        cms_path = os.path.join(
-            os.path.dirname(dashboard_path), 'CMS.html'
-        ) if dashboard_path else os.path.join(_ROOT, 'ui', 'CMS.html')
-
-        cms_collector = mod.CMSCollector(cms_path)
-        logger.info(f"A4 [{region_name}]: CMS browser ready — {cms_path}")
-
+        cms_collector = _get_cms_collector()
+        logger.info(f"A4 [{region_name}]: using shared global CMS collector")
     except Exception as e:
         logger.error(f"A4 [{region_name}]: CMS init failed — {e}")
         return

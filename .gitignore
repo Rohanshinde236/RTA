@@ -34,6 +34,7 @@ cms_agents.json
 rta_v3.log
 rta_startup.log
 log/
+.setup_done
 # NOTE: alerts/ holds SOURCE code (teams.py, email.py) the app imports —
 # do NOT ignore the whole folder. Only its __pycache__ is ignored (above).
 

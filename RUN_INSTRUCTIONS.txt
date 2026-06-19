@@ -1,0 +1,63 @@
+============================================================
+ RTA MONITORING SYSTEM - HOW TO RUN
+============================================================
+
+WHAT THIS IS
+  A real-time contact-centre SLA monitoring dashboard. It opens in
+  your web browser and shows live SLA, alerts, levers and a chatbot.
+
+
+------------------------------------------------------------
+ ONE-TIME SETUP (do this once)
+------------------------------------------------------------
+1. Install Python 3.11
+     - Go to: https://www.python.org/downloads/
+     - Run the installer and TICK the box "Add Python to PATH".
+       (This step is important.)
+
+2. Unzip this folder somewhere simple, for example:  C:\RTA_Final
+
+That's it for setup. (An internet connection is required - the
+chatbot and analysis use an online AI service.)
+
+
+------------------------------------------------------------
+ TO START THE APP
+------------------------------------------------------------
+1. Open the folder (e.g. C:\RTA_Final).
+2. Double-click  start.bat
+     - The FIRST time, it will install components automatically.
+       This can take a few minutes - please wait.
+     - It then opens the dashboard in your browser automatically.
+3. In the dashboard, click  "Start"  (Scrape & Monitor).
+
+  Dashboard address:  http://localhost:5000
+
+KEEP the black window (Command Prompt) open while using the app.
+
+
+------------------------------------------------------------
+ TO STOP THE APP
+------------------------------------------------------------
+  Close the black Command Prompt window, OR press  Ctrl + C  in it.
+
+
+------------------------------------------------------------
+ VIEW FROM ANOTHER COMPUTER (same office network)
+------------------------------------------------------------
+  On the PC running the app, find its IP address:
+     - open Command Prompt, type:  ipconfig
+     - note the "IPv4 Address" (e.g. 192.168.1.42)
+  On the other computer's browser, open:  http://192.168.1.42:5000
+  (Windows may ask to allow access the first time - click Allow.)
+
+
+------------------------------------------------------------
+ IF SOMETHING GOES WRONG
+------------------------------------------------------------
+  - "Python is not installed" message  -> install Python (step 1 above),
+    making sure to tick "Add Python to PATH", then double-click start.bat again.
+  - Dashboard shows no live data  -> click "Start" in the dashboard.
+  - Need to redo setup  -> delete the file ".setup_done" in the folder,
+    then double-click start.bat again.
+============================================================

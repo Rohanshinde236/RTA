@@ -89,7 +89,7 @@
       "shivam.saraf@alignedautomation.com",
       "rohan.shinde@alignedautomation.com"
     ],
-    "excel_path": "D:\\OneDrive - Aligned Automation Services Private Limited\\Desktop\\RTA_Final\\documents\\Voice_Queue_Intraday.xlsx",
+    "excel_path": "documents/Voice_Queue_Intraday.xlsx",
     "red_threshold": 80
   },
   "agent4": {
