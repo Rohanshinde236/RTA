@@ -29,3 +29,4 @@ requests>=2.31.0
 
 # Config / Environment
 python-dotenv>=1.0.0
+PyYAML>=6.0                     # Renders prompts/rules.yaml into chatbot + agent prompts
