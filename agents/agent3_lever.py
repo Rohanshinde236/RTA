@@ -306,6 +306,253 @@ def _build_snapshot_table(metric, region: str) -> str:
     )
 
 
+# ── KPI parsing + day aggregation for the rich HTML email ────────────────────
+import re as _re3
+
+
+def _to_int(s) -> int:
+    try:
+        return int(float(_re3.sub(r'[^\d.\-]', '', str(s)) or 0))
+    except Exception:
+        return 0
+
+
+def _pct_val(s):
+    v = _re3.sub(r'[^\d.\-]', '', str(s))
+    try:
+        return float(v) if v not in ('', '.', '-') else None
+    except Exception:
+        return None
+
+
+def _hms_to_sec(s) -> int:
+    try:
+        parts = [int(p) for p in str(s).strip().split(':')]
+    except Exception:
+        return 0
+    if len(parts) == 3:
+        return parts[0] * 3600 + parts[1] * 60 + parts[2]
+    if len(parts) == 2:
+        return parts[0] * 60 + parts[1]
+    return 0
+
+
+def _sec_to_hms(n: int) -> str:
+    n = int(n)
+    h, rem = divmod(n, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}:{m:02d}:{s:02d}"
+
+
+def _sl_band_color(sla: float) -> str:
+    """SL value → band colour, using the same thresholds as the levers (config.json)."""
+    cfg = _get_a3_config()
+    if sla >= cfg.get("amber_threshold", 90.0): return "#2e7d32"   # green
+    if sla >= cfg.get("red_threshold",   80.0): return "#f9a825"   # amber
+    if sla >= cfg.get("black_threshold", 70.0): return "#d32f2f"   # red
+    return "#212121"                                               # black
+
+
+def _aggregate_excel_day(rows: list) -> dict:
+    """Aggregate today's 30-min interval rows into one day-total snapshot."""
+    if not rows:
+        return {}
+    offered_total = sum(_to_int(r.get('callsoffered')) for r in rows)
+    handled_total = sum(_to_int(r.get('acdcalls')) for r in rows)
+
+    def _wavg_pct(col, weight_col='callsoffered'):
+        num = den = 0.0
+        for r in rows:
+            v = _pct_val(r.get(col))
+            if v is not None:
+                w = _to_int(r.get(weight_col)) or 1
+                num += v * w
+                den += w
+        return (num / den) if den else None
+
+    def _wavg_sec(col, weight_col):
+        num = den = 0.0
+        for r in rows:
+            sec = _hms_to_sec(r.get(col))
+            if sec:
+                w = _to_int(r.get(weight_col)) or 1
+                num += sec * w
+                den += w
+        return int(num / den) if den else 0
+
+    def _fp(v):
+        return f"{v:.1f}%" if v is not None else "—"
+
+    return {
+        "sl":          _fp(_wavg_pct('SL')),
+        "offered":     str(offered_total),
+        "handled":     str(handled_total),
+        "offered_pct": _fp(_wavg_pct('Offered%')),
+        "ab":          _fp(_wavg_pct('AR%')),
+        "aht":         _sec_to_hms(_wavg_sec('AHT', 'acdcalls')),
+        "ibu":         _fp(_wavg_pct('IBU%')),
+        "pdu":         _fp(_wavg_pct('PDU%')),
+        "avail":       _fp(_wavg_pct('Avail%')),
+        "maxocw":      _sec_to_hms(max((_hms_to_sec(r.get('maxocwtime')) for r in rows), default=0)),
+        "aqt":         _sec_to_hms(_wavg_sec('AQT', 'callsoffered')),
+        "aux":         [_fp(_wavg_pct(f'i_auxtime{i}')) for i in range(10)],
+    }
+
+
+def _lever_logos() -> dict:
+    """Return {cid: path} for logo files that exist (silently skipped if absent)."""
+    base = os.path.join(_ROOT, "documents")
+    candidates = {
+        "csg_logo":  os.path.join(base, "logo_csg.png"),
+        "dell_logo": os.path.join(base, "logo_dell.png"),
+    }
+    return {cid: p for cid, p in candidates.items() if os.path.isfile(p)}
+
+
+def _build_threshold_legend() -> str:
+    """Static SL Lever Thresholds reference table (matches the standard definitions)."""
+    rows = [
+        ("Blue",  "#1565c0", ">85.6% / ≤100%", ">96.3% / ≤100%", "Actual SL > SL Goal × 107%"),
+        ("Green", "#2e7d32", "≥80% / <85.6%",  "≥90% / <96.3%",  "Actual SL between 100%–107% of Goal"),
+        ("Amber", "#f9a825", "≥72% / <80%",    ">81% / <90%",    "Actual SL between 90%–100% of Goal"),
+        ("Red",   "#d32f2f", "≥64% / <72%",    "≥72% / <81%",    "Actual SL between 80%–90% of Goal"),
+        ("Black", "#212121", "≥0% / <64%",     "≥0% / <72%",     "Actual SL below 80% of Goal"),
+    ]
+    body = ""
+    for name, c, g80, g90, desc in rows:
+        body += (
+            f'<tr>'
+            f'<td style="padding:4px 8px;background:{c};color:#fff;font-weight:700;">{name}</td>'
+            f'<td style="padding:4px 8px;border:1px solid #ddd;" align="center">{g80}</td>'
+            f'<td style="padding:4px 8px;border:1px solid #ddd;" align="center">{g90}</td>'
+            f'<td style="padding:4px 8px;border:1px solid #ddd;">{desc}</td>'
+            f'</tr>'
+        )
+    return (
+        '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:11px;border:1px solid #ddd;">'
+        '<tr style="background:#37474f;color:#fff;">'
+        '<th style="padding:5px 8px;" align="left">Lever</th>'
+        '<th style="padding:5px 8px;">SL Goal 80%</th>'
+        '<th style="padding:5px 8px;">SL Goal 90%</th>'
+        '<th style="padding:5px 8px;" align="left">Description</th></tr>'
+        f'{body}</table>'
+    )
+
+
+def _build_lever_html(region, queue_name, lever, metric, root_causes, callouts,
+                      mitigations, agg, current_time, logos) -> str:
+    """Build the email-client-safe HTML dashboard (inline styles + tables only)."""
+    sl    = metric.service_level
+    band  = _sl_band_color(sl)
+    lname = lever['name'].upper()
+
+    def _bullets(items, empty):
+        items = items or [empty]
+        return "".join(f'<li style="margin:3px 0;line-height:1.5;">{x}</li>' for x in items)
+
+    csg = ('<img src="cid:csg_logo" alt="CSG" style="height:44px;">'
+           if "csg_logo" in logos
+           else '<span style="font-weight:700;color:#e23744;font-size:20px;">CSG</span>')
+    dell = ('<img src="cid:dell_logo" alt="Dell" style="height:40px;margin-top:10px;">'
+            if "dell_logo" in logos else '')
+
+    aux    = agg.get('aux', ['—'] * 10)
+    aux_th = "".join(f'<th style="padding:5px;">Aux{i}%</th>' for i in range(10))
+    aux_td = "".join(f'<td align="center" style="padding:5px;border:1px solid #ddd;">{aux[i]}</td>' for i in range(10))
+
+    return f"""
+<html><body style="margin:0;padding:0;background:#f4f6f9;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:16px;">
+<tr><td align="center">
+<table width="860" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid #d6dbe1;font-family:Arial,Helvetica,sans-serif;color:#2c3e50;">
+
+  <!-- Logo strip + header banner -->
+  <tr><td style="padding:10px 16px;border-bottom:1px solid #eee;">{csg}</td></tr>
+  <tr><td style="background:{band};padding:14px 18px;">
+      <span style="color:#fff;font-size:16px;font-weight:700;">
+        APJ CSG | {region} | {queue_name} | {lname} Lever SL @ {sl:.1f}%
+      </span>
+  </td></tr>
+
+  <!-- Two-column: analysis (left) + Aceyus snapshot (right) -->
+  <tr><td style="padding:16px 18px;">
+    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td width="56%" valign="top" style="font-size:13px;padding-right:14px;">
+        <p style="margin:0 0 4px;font-weight:700;">Combined Queue Name:</p>
+        <ul style="margin:0 0 12px;padding-left:18px;">{_bullets([queue_name], queue_name)}</ul>
+        <p style="margin:0 0 4px;font-weight:700;">Root Cause:</p>
+        <ul style="margin:0 0 12px;padding-left:18px;">{_bullets(root_causes, f"SLA dropped to {sl:.1f}%")}</ul>
+        <p style="margin:0 0 4px;font-weight:700;">Business Callouts:</p>
+        <ul style="margin:0 0 12px;padding-left:18px;">{_bullets(callouts, "No TCDs reported by Business")}</ul>
+        <p style="margin:0 0 4px;font-weight:700;">Mitigation Actions:</p>
+        <ul style="margin:0 0 4px;padding-left:18px;">{_bullets(mitigations, "Real-time load balancing in progress")}</ul>
+      </td>
+      <td width="44%" valign="top">
+        <p style="margin:0 0 6px;font-weight:700;text-align:center;">Aceyus Real-Time Snapshot — {current_time}</p>
+        <table width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:12px;border:1px solid #ddd;">
+          <tr style="background:#eef2f7;color:#555;">
+            <th align="left" style="padding:6px;">Queue</th><th>CIQ</th><th>OCW</th>
+            <th>Avail</th><th>Offered</th><th>Handled</th><th>SL</th>
+          </tr>
+          <tr>
+            <td style="padding:6px;border-top:1px solid #eee;">{queue_name}</td>
+            <td align="center" style="border-top:1px solid #eee;">{metric.calls_waiting}</td>
+            <td align="center" style="border-top:1px solid #eee;">{metric.ocw}</td>
+            <td align="center" style="border-top:1px solid #eee;">{metric.agents_available}</td>
+            <td align="center" style="border-top:1px solid #eee;">{agg.get('offered','—')}</td>
+            <td align="center" style="border-top:1px solid #eee;">{agg.get('handled','—')}</td>
+            <td align="center" style="background:{band};color:#fff;font-weight:700;">{sl:.1f}%</td>
+          </tr>
+        </table>
+      </td>
+    </tr></table>
+  </td></tr>
+
+  <!-- Full-width KPI table (day totals from Excel) -->
+  <tr><td style="padding:0 18px 16px;">
+    <p style="margin:0 0 6px;font-weight:700;">Combined Queue — Day Summary</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:11px;border:1px solid #ccc;">
+      <tr style="background:#1f3a5f;color:#fff;">
+        <th align="left" style="padding:5px;">Combined Queue</th>
+        <th style="padding:5px;">SL</th><th style="padding:5px;">Offered#</th><th style="padding:5px;">Handled#</th>
+        <th style="padding:5px;">Offered%</th><th style="padding:5px;">AB%</th><th style="padding:5px;">AHT</th>
+        <th style="padding:5px;">IBU%</th><th style="padding:5px;">PDU%</th><th style="padding:5px;">Avail%</th>
+        <th style="padding:5px;">maxOCW</th><th style="padding:5px;">AQT</th>{aux_th}
+      </tr>
+      <tr>
+        <td align="left" style="padding:5px;border:1px solid #ddd;">{queue_name}</td>
+        <td align="center" style="background:{band};color:#fff;font-weight:700;">{agg.get('sl','—')}</td>
+        <td align="center" style="padding:5px;border:1px solid #ddd;">{agg.get('offered','—')}</td>
+        <td align="center" style="padding:5px;border:1px solid #ddd;">{agg.get('handled','—')}</td>
+        <td align="center" style="padding:5px;border:1px solid #ddd;">{agg.get('offered_pct','—')}</td>
+        <td align="center" style="padding:5px;border:1px solid #ddd;">{agg.get('ab','—')}</td>
+        <td align="center" style="padding:5px;border:1px solid #ddd;">{agg.get('aht','—')}</td>
+        <td align="center" style="padding:5px;border:1px solid #ddd;">{agg.get('ibu','—')}</td>
+        <td align="center" style="padding:5px;border:1px solid #ddd;">{agg.get('pdu','—')}</td>
+        <td align="center" style="padding:5px;border:1px solid #ddd;">{agg.get('avail','—')}</td>
+        <td align="center" style="padding:5px;border:1px solid #ddd;">{agg.get('maxocw','—')}</td>
+        <td align="center" style="padding:5px;border:1px solid #ddd;">{agg.get('aqt','—')}</td>{aux_td}
+      </tr>
+    </table>
+  </td></tr>
+
+  <!-- SL Lever Thresholds legend -->
+  <tr><td style="padding:0 18px 16px;">
+    <p style="margin:0 0 6px;font-weight:700;">SL Lever Thresholds</p>
+    {_build_threshold_legend()}
+  </td></tr>
+
+  <!-- Footer -->
+  <tr><td style="padding:12px 18px;border-top:1px solid #eee;background:#fafbfc;">
+    {dell}
+    <p style="margin:6px 0 0;color:#888;font-size:11px;">Generated by RTA Agentic System | {current_time}</p>
+  </td></tr>
+
+</table>
+</td></tr></table>
+</body></html>"""
+
+
 # ── Email sender ──────────────────────────────────────────────────────────────
 
 def _send_lever_email(
@@ -316,7 +563,8 @@ def _send_lever_email(
     llm_result: dict,
     snapshot_table: str,
     email_mod,
-    state: dict = None
+    state: dict = None,
+    excel_rows: list = None
 ):
     """Build and send the Lever email."""
 
@@ -410,6 +658,19 @@ def _send_lever_email(
 
     body = "\n".join(lines)
 
+    # ── Build the rich HTML dashboard (falls back to plain text inside email.py) ──
+    try:
+        agg   = _aggregate_excel_day(excel_rows or [])
+        logos = _lever_logos()
+        html  = _build_lever_html(
+            region=region, queue_name=queue_name, lever=lever, metric=metric,
+            root_causes=root_causes, callouts=callouts, mitigations=mitigations,
+            agg=agg, current_time=current_time, logos=logos,
+        )
+    except Exception as e:
+        logger.error(f"A3 [{region}]: HTML build failed ({e}) — sending plain text")
+        html, logos = None, None
+
     # Send via existing email module
     try:
         email_mod.send_lever_email(
@@ -417,7 +678,9 @@ def _send_lever_email(
             body=body,
             skill_name=skill_name,
             lever_name=lever_name,
-            region=region
+            region=region,
+            html=html,
+            inline_images=logos,
         )
         logger.info(f"A3 [{region}]: {lever_name} Lever email sent for {skill_name}")
     except Exception as e:
@@ -561,7 +824,7 @@ def agent3_lever(state: dict) -> dict:
         _send_lever_email(
             region_name, skill_name, lever,
             metric, result, snapshot_table, _email,
-            state=state
+            state=state, excel_rows=excel_rows
         )
 
         # ── Mark as fired ─────────────────────────────────────────────────────

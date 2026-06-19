@@ -386,27 +386,32 @@ output_formats:
       NOTE: This format is for single-skill + single-time queries ONLY. For region-wide queries use region_status format.
 
   range_or_fullday:
-    trigger: "what happened last day, how did X do yesterday, performance last hour"
+    trigger: "what happened last day, how did X do yesterday, performance last hour, past N days"
     format: |
-      Use a SCORECARD table followed by a short story summary. Exactly this structure:
+      Summarise ONLY from the rows in context. Pick the layout by how many skills are present:
 
-      ### [Skill] · [Region] · [Date]
+      (A) SINGLE skill → compact scorecard. Include ONLY metrics actually present in the data.
+          OMIT any metric you don't have — NEVER write "No data" / "Not available", and NEVER invent.
+          ### [Skill] · [Region] · [Date]
+          | Metric | Value |
+          |--------|-------|
+          | Average SLA | ~X% [band emoji] |
+          | Peak SLA | X% |
+          | Lowest SLA | X% [band emoji] |
+          | Peak Queue | N |            (only if queue values are in context)
+          | Lever Fired | 🔴 Red / None |   (only if lever_fired is in context)
+          Then 1–2 sentences of plain narrative.
 
-      | Metric | Value |
-      |--------|-------|
-      | Peak SLA | X% ✅ |
-      | Lowest SLA | X% 🔴 SEVERE (or relevant band emoji) |
-      | Average SLA | ~X% |
-      | Peak Queue | N calls (H:MM AM/PM) |
-      | Agents Available | N at worst point |
-      | Lever Fired | None / 🔴 Red at H:MM AM |
-      | Root Cause | one short phrase |
+      (B) MULTIPLE skills (e.g. a whole region) → one row PER skill, never collapse to one:
+          ### [Region] · [Date]
+          | Skill | Avg SLA | Lowest | Band |
+          one row per skill (worst SLA first), then a 1-line summary.
 
-      **Time in band:** 🔴 SEVERE Xh · ⚠️ WARNING Xh · ✅ HEALTHY Xh
-
-      Then 2–3 sentences of plain narrative below the table — what happened,
-      when it was worst, whether it recovered, and why. No bullet points in
-      the narrative. Keep it concise and readable.
+      HARD RULES:
+      - Use ONLY metrics that appear in the context.
+      - Do NOT output a "Time in band: Xh" line unless the context literally contains per-band
+        durations (it almost never does) — never estimate or fabricate hours.
+      - Never repeat a metric row twice.
 
   improvement_actions:
     trigger: "how to improve, fix breached skills, what actions to take, what should we do, recommendations, how can we improve"
@@ -459,11 +464,15 @@ output_formats:
         Summary line: "X agents on AUX across Y skills — individual names pending CMS data."
 
   lever:
-    trigger: "what levers fired, any escalations"
+    trigger: "what levers fired, any escalations, how many levers fired"
     format: |
-      Markdown table sorted by time:
-      | Time | Region | Skill | Lever | Action |
-      If none: "✅ No lever fires recorded in this period."
+      If the context is a COUNT (a single number / count column) → state it plainly:
+        "**N** lever(s) fired in this period." Break down by colour if the data has it.
+      If the context lists individual fires → markdown table sorted by time:
+        | Time | Region | Skill | Lever |
+      ONLY if the data genuinely shows zero fires: "✅ No lever fires recorded in this period."
+      Reminder: lever_fired is NULL when none, else 'Amber'/'Red'/'Black' — a non-zero count means
+      levers DID fire; never report "no fires" when the count is greater than zero.
 
   comparison:
     trigger: "which region is worst, compare India vs China"

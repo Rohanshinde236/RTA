@@ -1828,9 +1828,16 @@ def _detect_temporal_intent(question: str) -> str:
     return "neutral"
 
 
+# Friendly region names the chatbot knows — used to ground suggestions so the
+# LLM can't invent places (e.g. "Mumbai", "Delhi") that don't exist here.
+_REGION_NAMES = ["India", "China", "Australia", "EMEA", "Hong Kong",
+                 "Malaysia", "Korea", "Thailand", "Brazil", "Taiwan"]
+
+
 def _suggest_followups(question: str, mode: str) -> list:
     """
     Generate up to 3 deeper follow-up questions for the given question/mode.
+    Grounded on the real region/skill vocabulary so it never invents entities.
     Best-effort — returns [] on any failure so it never blocks the answer.
     """
     try:
@@ -1838,8 +1845,10 @@ def _suggest_followups(question: str, mode: str) -> list:
         mode_desc = ("answers from current real-time dashboard data only"
                      if mode == "live"
                      else "answers from the 7-day historical SQLite database")
+        regions = ", ".join(_REGION_NAMES)
+        skills  = ", ".join(sorted(SKILL_REGION_MAP.keys()))
         prompt = load_prompt("chatbot_suggest", mode=mode, mode_desc=mode_desc,
-                             question=question)
+                             regions=regions, skills=skills, question=question)
         raw = _call_llm_raw(prompt, max_tokens=120, is_sql=True)
         if not raw or raw.startswith("⚠️"):
             return []
@@ -2176,51 +2185,301 @@ def api_thresholds():
     return jsonify({"ok": True})
 
 
+# ════════════════════════════════════════════════════════════════════════════
+#  CHAT v2 — Intent Agent (LLM #1) → Execution Agent (code) → Answer (LLM #2)
+#  Auto-routes: no manual Live/History toggle. Only TWO LLM calls per answer
+#  (scope questions use just one). Structured filter for live data — no regex.
+# ════════════════════════════════════════════════════════════════════════════
+
+_REGION_BY_TAG = {
+    "rta": "India", "cn": "China", "au": "Australia", "emea": "EMEA",
+    "hk": "Hong Kong", "my": "Malaysia", "kr": "Korea", "th": "Thailand",
+    "br": "Brazil", "tw": "Taiwan",
+}
+
+# Map whatever the intent LLM emits (tag, country name, abbrev) → canonical tag.
+# The LLM sometimes returns "india"/"in" instead of the tag "rta", or a bare
+# string instead of a list — normalise all of it here.
+_REGION_ALIASES = {
+    "rta": "rta", "india": "rta", "in": "rta", "ind": "rta",
+    "cn": "cn", "china": "cn", "chn": "cn",
+    "au": "au", "australia": "au", "aus": "au",
+    "emea": "emea", "europe": "emea",
+    "hk": "hk", "hong kong": "hk", "hongkong": "hk", "hkg": "hk",
+    "my": "my", "malaysia": "my", "mys": "my",
+    "kr": "kr", "korea": "kr", "kor": "kr",
+    "th": "th", "thailand": "th", "tha": "th",
+    "br": "br", "brazil": "br", "bra": "br", "latam-br": "br",
+    "tw": "tw", "taiwan": "tw", "twn": "tw",
+}
+
+
+def _norm_region(x):
+    """Resolve a region identifier (tag/name/abbrev) to its canonical tag, or None."""
+    return _REGION_ALIASES.get(str(x).strip().lower())
+
+
+def _parse_intent_json(text: str) -> dict:
+    """Extract the JSON object from the intent LLM output. Returns {} on failure."""
+    if not text:
+        return {}
+    t = text.strip()
+    if t.startswith("```"):
+        t = t.split("```", 2)[1] if t.count("```") >= 2 else t.strip("`")
+        if t.lower().startswith("json"):
+            t = t[4:]
+    i, j = t.find("{"), t.rfind("}")
+    if i == -1 or j == -1 or j < i:
+        return {}
+    try:
+        return json.loads(t[i:j + 1])
+    except Exception:
+        return {}
+
+
+def _intent_agent(question: str) -> dict:
+    """LLM #1 — classify route (sql/json/scope) and generate the query artifact."""
+    from datetime import timedelta
+    from core.prompt_loader import load_prompt
+    from core.history import get_schema
+    now = datetime.now()
+    prompt = load_prompt(
+        "chatbot_intent",
+        now=now.strftime("%Y-%m-%d %H:%M:%S"),
+        today=now.strftime("%Y-%m-%d"),
+        yesterday=(now - timedelta(days=1)).strftime("%Y-%m-%d"),
+        regions=", ".join(_REGION_NAMES),
+        skills=", ".join(sorted(SKILL_REGION_MAP.keys())),
+        schema=get_schema(),
+        question=question,
+    )
+    raw = _call_llm_raw(prompt, max_tokens=500, is_sql=False)
+    intent = _parse_intent_json(raw)
+    if not intent.get("route"):
+        logger.warning(f"[chat] intent parse failed — defaulting to live. raw={raw[:160]!r}")
+        return {"route": "json", "reason": "fallback",
+                "filter": {"target": "skills", "regions": "all", "skills": "all"}}
+    logger.info(f"[chat] route={intent.get('route')} ({intent.get('reason','')})")
+    return intent
+
+
+def _active_region_tags(cfg: dict) -> set:
+    """Region tags currently marked active in config.json."""
+    return {r.get("name", "").lower() for r in cfg.get("regions", []) if r.get("active", True)}
+
+
+def _execute_sql(sql: str):
+    """Run intent-generated SQL on history.db. Returns (context_str, meta_dict)."""
+    from core.guardrails import validate_sql
+    from core.history import query as db_query
+    sql = (sql or "").strip()
+    if not sql:
+        return "", {"empty": True, "why": "no_sql"}
+    ok, res = validate_sql(sql)
+    if not ok:
+        logger.warning(f"[chat] SQL guardrail blocked: {res}")
+        return "", {"empty": True, "why": "unsafe_sql", "detail": str(res)}
+    try:
+        rows = db_query(sql)
+    except Exception as e:
+        return "", {"empty": True, "why": "sql_error", "detail": str(e)}
+    if not rows:
+        return "", {"empty": True, "why": "no_history_rows"}
+    capped = rows[:40]
+    head = f"HISTORICAL RESULTS ({len(rows)} row(s)" + (", first 40" if len(rows) > 40 else "") + "):"
+    lines = [head] + ["  " + json.dumps(dict(r), default=str) for r in capped]
+    return "\n".join(lines), {"rows": len(rows), "source": "history"}
+
+
+def _execute_json(filt: dict):
+    """Apply a structured filter to live data. Returns (context_str, meta_dict)."""
+    filt    = filt or {}
+    running = get_status() == "running"
+    cfg     = load_cfg()
+    active  = _active_region_tags(cfg)
+    live    = _load_live_state()
+    cms     = _load_cms_agents()
+
+    # Normalise regions — the LLM may send "all", a bare string ("rta"/"india"),
+    # or a list. Iterating a bare string would split it into characters, so coerce
+    # to a list first, then resolve aliases to canonical tags.
+    req = filt.get("regions", "all")
+    if isinstance(req, str):
+        req = "all" if req.strip().lower() == "all" else [req]
+    if not req or req == "all":
+        region_tags = list(live.keys()) or list(active)
+    else:
+        region_tags = [r for r in (_norm_region(t) for t in req) if r]
+        if not region_tags:                       # nothing resolved → fall back to all
+            region_tags = list(live.keys()) or list(active)
+
+    inactive_req = [t for t in region_tags if t not in active]
+
+    # Normalise skills — accept "all", a bare skill string, or a list.
+    skills_req = filt.get("skills", "all")
+    if isinstance(skills_req, str) and skills_req.strip().lower() != "all":
+        skills_req = [skills_req]
+    target       = filt.get("target", "skills")
+    metric       = filt.get("metric")
+    op           = filt.get("op")
+    val          = filt.get("value")
+    state        = (filt.get("state") or "").upper() or None
+
+    def _match(num):
+        if metric is None or op is None or val is None or num is None:
+            return True
+        try:
+            n, v = float(num), float(val)
+        except Exception:
+            return True
+        return {"<": n < v, ">": n > v, ">=": n >= v, "<=": n <= v, "==": n == v}.get(op, True)
+
+    lines, found = [], False
+    for tag in region_tags:
+        rdata = live.get(tag)
+        if not rdata:
+            continue
+        rname  = _REGION_BY_TAG.get(tag, tag.upper())
+        skills = rdata.get("skills", {})
+        if isinstance(skills_req, list):
+            skills = {s: d for s, d in skills.items() if s in skills_req}
+
+        if target == "agents":
+            region_cms = cms.get(tag, {})
+            for skill, d in skills.items():
+                for a in region_cms.get(skill, []):
+                    if state and a.get("state", "").upper() != state:
+                        continue
+                    if not _match(a.get("time_minutes")):
+                        continue
+                    found = True
+                    lines.append(
+                        f"  {rname} / {skill}: {a.get('name')} — {a.get('state')} "
+                        f"{a.get('aux_name') or a.get('aux_reason') or ''} "
+                        f"({a.get('time_minutes', 0)} min)"
+                    )
+        else:
+            for skill, d in skills.items():
+                if metric == "breached":
+                    if op == "==" and val is not None and bool(d.get("breached")) != bool(val):
+                        continue
+                elif not _match(d.get(metric) if metric else None):
+                    continue
+                found = True
+                lines.append(
+                    f"  {rname} / {skill}: SLA={d.get('sla')}% ({d.get('band')}) "
+                    f"queue={d.get('queue')} ocw={d.get('ocw')} avail={d.get('avail')} "
+                    f"on_aux={d.get('on_aux')} breached={d.get('breached')}"
+                )
+
+    meta = {
+        "source": "live",
+        "running": running,
+        "requested_regions": [_REGION_BY_TAG.get(t, t) for t in region_tags],
+        "inactive_regions": [_REGION_BY_TAG.get(t, t) for t in inactive_req],
+        "empty": not found,
+    }
+    return ("LIVE DATA (current poll):\n" + "\n".join(lines)) if found else "", meta
+
+
+def _meta_note(route: str, meta: dict) -> str:
+    """Turn execution metadata into a plain-English instruction for the answer LLM."""
+    if not meta.get("empty"):
+        return "Data was found. Answer normally from it."
+    why = meta.get("why")
+    if route == "history":
+        if why in ("unsafe_sql", "sql_error", "no_sql"):
+            return "The historical query could not be built/run. Ask the user to rephrase."
+        return "No historical records matched. Say so and suggest a different date / region / skill."
+    if not meta.get("running"):
+        return ("The monitoring system is NOT running, so there is no live data. "
+                "Tell the user to start it from the Dashboard.")
+    inactive  = meta.get("inactive_regions") or []
+    requested = meta.get("requested_regions") or []
+    if inactive and requested and set(inactive) >= set(requested):
+        return (f"These regions are currently INACTIVE (not monitored): {', '.join(inactive)}. "
+                f"Tell the user that region isn't being monitored right now.")
+    note = "No live records matched right now. Explain there's nothing matching"
+    if inactive:
+        note += f" (note: {', '.join(inactive)} is inactive/not monitored)"
+    return note + ", naming the region/skill."
+
+
+_SCOPE_SUGGESTIONS = [
+    "What is the current SLA for India?",
+    "Which skills are breached right now?",
+    "Who is on AUX in China?",
+]
+
+
+def _split_answer_suggestions(raw: str):
+    """Split LLM #2 output into (answer, [up to 3 suggestions])."""
+    marker = "###SUGGESTIONS###"
+    if marker in raw:
+        ans, sugg = raw.split(marker, 1)
+        out = []
+        for line in sugg.splitlines():
+            line = _re_intent.sub(r'^\s*(\d+[\.\)]|[-*•])\s*', '', line).strip()
+            line = line.strip('"').strip("'").strip()
+            if line and len(line) > 5:
+                out.append(line)
+        return ans.strip(), out[:3]
+    return raw.strip(), []
+
+
+def _answer_agent(question: str, context: str, meta_note: str):
+    """LLM #2 — turn execution results into an answer + grounded suggestions."""
+    from core.prompt_loader import load_prompt
+    prompt = load_prompt(
+        "chatbot_answer",
+        context=context or "(no rows returned)",
+        meta=meta_note,
+        regions=", ".join(_REGION_NAMES),
+        skills=", ".join(sorted(SKILL_REGION_MAP.keys())),
+        question=question,
+    )
+    raw = _call_llm_raw(prompt, max_tokens=1500, is_sql=False)
+    return _split_answer_suggestions(raw)
+
+
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
-    """Unified chat endpoint for React frontend (same logic as /chat POST)."""
+    """Auto-routing chat: Intent Agent (LLM#1) → Execution (code) → Answer (LLM#2)."""
     data     = request.get_json(force=True) or {}
     question = (data.get("question") or "").strip()
-    mode     = data.get("mode", "live")
     if not question:
-        return jsonify({"answer": "Please enter a question.", "suggestions": []})
+        return jsonify({"answer": "Please enter a question.", "suggestions": [], "route": None})
 
-    intent = _detect_temporal_intent(question)
+    try:
+        from core.prompt_loader import clear_cache
+        clear_cache()  # always reload prompt files — no stale templates
 
-    # ── Live mode + question about the past → don't guess, send them to History ──
-    if mode == "live" and intent == "past":
-        answer = (
-            "🕑 That looks like a question about **past data**, but I'm in **Live mode** — "
-            "I only have the current poll, not history.\n\n"
-            "👉 Switch to **History mode** (toggle at the top-right) and ask again to get accurate "
-            "past data."
-        )
-        return jsonify({
-            "answer": answer,
-            "suggestions": _suggest_followups(question, "history"),
-            "notice": "switch_to_history",
-        })
+        intent = _intent_agent(question)
+        route  = intent.get("route")
 
-    if mode == "history":
-        context = _build_history_context(question)
-        answer  = _call_llm_for_chat(question, context)
-        # ── History mode + question about the live/current situation → caveat ────
-        if intent == "present":
-            answer = (
-                "⚠️ I don't have **current live data** in History mode, so this may not reflect "
-                "the real-time situation — but based on the **latest available past data**, this "
-                "may help:\n\n" + answer
+        # ── Scope guard — answer directly, no execution, no 2nd LLM ──────────────
+        if route == "scope":
+            msg = intent.get("message") or (
+                "I can only help with RTA SLA monitoring — try asking about SLA, queues, "
+                "AUX status, breaches, or levers for a valid region."
             )
-    else:
-        live_state = _load_live_state()
-        cms_agents = _load_cms_agents()
-        context    = _build_context(question, live_state, cms_agents)
-        answer     = _call_llm_for_chat(question, context)
+            return jsonify({"answer": msg, "suggestions": _SCOPE_SUGGESTIONS, "route": "scope"})
 
-    return jsonify({
-        "answer": answer,
-        "suggestions": _suggest_followups(question, mode),
-    })
+        # ── History (SQL on history.db) ──────────────────────────────────────────
+        if route == "sql":
+            context, meta = _execute_sql(intent.get("sql", ""))
+            answer, suggestions = _answer_agent(question, context, _meta_note("history", meta))
+            return jsonify({"answer": answer, "suggestions": suggestions, "route": "history"})
+
+        # ── Live (JSON structured filter) — default ───────────────────────────────
+        context, meta = _execute_json(intent.get("filter") or {})
+        answer, suggestions = _answer_agent(question, context, _meta_note("live", meta))
+        return jsonify({"answer": answer, "suggestions": suggestions, "route": "live"})
+
+    except Exception as e:
+        logger.exception("chat error")
+        return jsonify({"answer": f"Something went wrong while answering: {e}",
+                        "suggestions": [], "route": None})
 
 
 # ── SocketIO events ────────────────────────────────────────────────────────────

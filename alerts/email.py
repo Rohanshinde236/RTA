@@ -102,11 +102,18 @@ def send_email_band_drop(skill_name: str, old_band: str, new_band: str,
 # ── Agent 3 — Lever report email ──────────────────────────────────────────────
 
 def send_lever_email(subject: str, body: str, skill_name: str,
-                     lever_name: str, region: str) -> bool:
+                     lever_name: str, region: str,
+                     html: str = None, inline_images: dict = None) -> bool:
     """
     Send Lever report email to managers.
     Called by Agent 3 when SLA crosses 90 / 80 / 70 threshold.
     Fires once per threshold crossing per skill.
+
+    html          : pre-built HTML body (Agent 3 builds the rich dashboard layout).
+                    If None, a simple <pre> wrapper around `body` is used.
+    inline_images : {cid: filepath} — embedded via Content-ID for logos
+                    (e.g. {"csg_logo": "documents/logo_csg.png"}). Referenced
+                    in the HTML as <img src="cid:csg_logo">. Missing files are skipped.
     """
     smtp_server    = os.getenv("SMTP_SERVER", "smtp.gmail.com")
     smtp_port      = int(os.getenv("SMTP_PORT", "587"))
@@ -128,19 +135,16 @@ def send_lever_email(subject: str, body: str, skill_name: str,
     }
     color = lever_colors.get(lever_name.upper(), "#333333")
 
-    # HTML version — styled like the real Lever report
-    html = f"""
+    # HTML version — use the rich layout from Agent 3 if provided, else a simple wrapper
+    if html is None:
+        html = f"""
     <html>
     <body style="font-family:Arial,sans-serif;color:#2c3e50;max-width:750px;margin:0 auto;padding:20px;">
-
-      <!-- Header banner -->
       <div style="background:{color};padding:16px 20px;border-radius:8px 8px 0 0;">
         <h2 style="color:white;margin:0;font-size:16px;">
           {region} | {skill_name} | {lever_name} LEVER
         </h2>
       </div>
-
-      <!-- Body -->
       <div style="border:2px solid {color};border-top:none;padding:20px;
                   border-radius:0 0 8px 8px;background:#fff;">
         <pre style="font-family:Arial,sans-serif;font-size:13px;
@@ -148,22 +152,38 @@ def send_lever_email(subject: str, body: str, skill_name: str,
 {body}
         </pre>
       </div>
-
-      <!-- Footer -->
       <p style="color:#aaa;font-size:11px;margin-top:16px;text-align:center;">
         RTA Agentic SLA Monitoring System — Auto-generated Lever Report
       </p>
-
     </body>
     </html>"""
 
-    msg            = MIMEMultipart('alternative')
+    # 'related' wraps the alternative part + inline images so CID logos render in Outlook/Gmail
+    msg            = MIMEMultipart('related')
     msg['Subject'] = subject
     msg['From']    = smtp_user
     msg['To']      = ", ".join(recipients)
 
-    msg.attach(MIMEText(body, 'plain'))   # plain text fallback
-    msg.attach(MIMEText(html, 'html'))    # HTML version
+    alt = MIMEMultipart('alternative')
+    alt.attach(MIMEText(body, 'plain'))   # plain text fallback
+    alt.attach(MIMEText(html, 'html'))    # HTML version
+    msg.attach(alt)
+
+    # Embed logos by Content-ID (skip any file that doesn't exist)
+    if inline_images:
+        from email.mime.image import MIMEImage
+        for cid, path in inline_images.items():
+            if not path or not os.path.isfile(path):
+                continue
+            try:
+                with open(path, "rb") as f:
+                    img = MIMEImage(f.read())
+                img.add_header("Content-ID", f"<{cid}>")
+                img.add_header("Content-Disposition", "inline",
+                               filename=os.path.basename(path))
+                msg.attach(img)
+            except Exception as e:
+                logger.warning(f"A3 Email: inline image '{cid}' failed: {e}")
 
     try:
         server = smtplib.SMTP(smtp_server, smtp_port)

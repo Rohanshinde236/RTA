@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Send, Database, Radio, Trash2, Bot } from 'lucide-react'
+import { Send, Trash2, Bot } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -53,8 +53,16 @@ const MD_COMPONENTS = {
   ),
 }
 
+/* Which data source the auto-router used to answer */
+const ROUTE_BADGE = {
+  live:    { label: '📊 Live data', cls: 'text-blue-400 bg-blue-500/10 border-blue-500/30'   },
+  history: { label: '📅 History',   cls: 'text-purple-400 bg-purple-500/10 border-purple-500/30' },
+  scope:   { label: 'ℹ️ Guidance',  cls: 'text-slate-400 bg-slate-600/20 border-slate-600/40' },
+}
+
 function Message({ msg }) {
   const isUser = msg.role === 'user'
+  const badge  = !isUser && msg.route ? ROUTE_BADGE[msg.route] : null
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4 animate-slide-in`}>
       {!isUser && (
@@ -63,6 +71,11 @@ function Message({ msg }) {
         </div>
       )}
       <div className={`max-w-[80%] px-4 py-3 text-sm ${isUser ? 'chat-user text-slate-200 whitespace-pre-wrap' : 'chat-bot text-slate-300'}`}>
+        {badge && (
+          <span className={`inline-block mb-2 text-[10px] font-medium px-2 py-0.5 rounded-full border ${badge.cls}`}>
+            {badge.label}
+          </span>
+        )}
         {isUser
           ? msg.content
           : (
@@ -87,7 +100,6 @@ const SUGGESTIONS = [
 export default function Chatbot() {
   const [messages, setMessages] = useState([])
   const [input, setInput]       = useState('')
-  const [mode, setMode]         = useState('live')   // 'live' | 'history'
   const [loading, setLoading]   = useState(false)
   const bottomRef = useRef(null)
   const inputRef  = useRef(null)
@@ -116,13 +128,14 @@ export default function Chatbot() {
       const r = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q, mode }),
+        body: JSON.stringify({ question: q }),
       })
       const d = await r.json()
       setMessages(m => [...m, {
         role: 'bot',
         content: d.answer || d.error || 'No response',
         suggestions: Array.isArray(d.suggestions) ? d.suggestions : [],
+        route: d.route || null,
       }])
     } catch (e) {
       setMessages(m => [...m, { role: 'bot', content: `Error: ${e.message}` }])
@@ -145,22 +158,6 @@ export default function Chatbot() {
           </div>
         </div>
 
-        {/* Mode toggle */}
-        <div className="flex items-center gap-1 p-1 bg-[#080d1a] rounded-lg border border-[#1e3354]">
-          <button
-            onClick={() => setMode('live')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-all ${mode === 'live' ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30' : 'text-slate-500 hover:text-slate-300'}`}
-          >
-            <Radio size={11} /> Live
-          </button>
-          <button
-            onClick={() => setMode('history')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-all ${mode === 'history' ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30' : 'text-slate-500 hover:text-slate-300'}`}
-          >
-            <Database size={11} /> History
-          </button>
-        </div>
-
         <button
           onClick={() => { setMessages([]); sessionStorage.removeItem('rta_chat') }}
           className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-400 transition-colors"
@@ -179,7 +176,7 @@ export default function Chatbot() {
             <div>
               <p className="text-slate-400 font-medium mb-1">Ask me anything about SLA performance</p>
               <p className="text-slate-600 text-sm">
-                {mode === 'live' ? 'Using current live dashboard data' : 'Querying 7-day history database'}
+                I automatically use live data or 7-day history based on your question
               </p>
             </div>
             <div className="grid grid-cols-1 gap-2 w-full max-w-sm">
@@ -231,13 +228,6 @@ export default function Chatbot() {
           </div>
         )}
         <div ref={bottomRef} />
-      </div>
-
-      {/* Mode indicator bar */}
-      <div className={`px-6 py-1.5 text-xs border-t border-[#1e3354] ${mode === 'history' ? 'text-purple-500 bg-purple-500/5' : 'text-blue-500 bg-blue-500/5'}`}>
-        {mode === 'live'
-          ? '● Live mode — answering from current dashboard data'
-          : '● History mode — querying SQLite database (7-day window)'}
       </div>
 
       {/* Input */}

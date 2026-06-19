@@ -336,3 +336,24 @@ html.light-mode .min-h-full { background: transparent; }
 
 /* Health summary border */
 html.light-mode .border-l.border-\[\#1e3354\] { border-color: var(--border) !important; }
+
+/* ── Sidebar (left nav) ─────────────────────────────────────────────────── */
+/* The <aside> background is an inline gradient; override it with !important.   */
+html.light-mode aside {
+  background: linear-gradient(180deg, #ffffff 0%, #eef3fb 100%) !important;
+  border-right: 1px solid var(--border) !important;
+}
+/* Brand title uses gradient-clipped text (invisible on light bg) — make it solid navy */
+html.light-mode aside .leading-tight {
+  background: none !important;
+  -webkit-text-fill-color: #1e3a5f !important;
+  color: #1e3a5f !important;
+}
+/* Brand subtitle + footer region codes — readable muted tone */
+html.light-mode aside .text-slate-500,
+html.light-mode aside .text-slate-600 { color: #64748b !important; }
+/* Active nav item — a touch stronger on a light background */
+html.light-mode aside a.bg-blue-600\/20,
+html.light-mode aside .bg-blue-600\/20 { background: rgba(37,99,235,0.12) !important; }
+/* Theme-toggle off-state pill stays visible on light */
+html.light-mode aside .bg-slate-700 { background: #cbd5e1 !important; }
